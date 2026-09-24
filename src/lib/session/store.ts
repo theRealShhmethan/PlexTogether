@@ -30,6 +30,11 @@ export type HostSession = {
   clientIdentifier: string;
   plex: PlexCredential;
   user: PlexUser;
+  /**
+   * Plex Home profile switched to, if any. When set, its token is used for
+   * all server/library access instead of the account token.
+   */
+  profile?: ActiveProfile;
   createdAt: number;
   expiresAt: number;
   /** Last server list from plex.tv (contains per-server access tokens). */
@@ -47,6 +52,13 @@ export type HostSession = {
 export type PlexCredential =
   | { mode: "legacy"; token: string }
   | { mode: "jwt"; token: string; expiresAt: number; deviceKey: DeviceKey };
+
+export type ActiveProfile = {
+  uuid: string;
+  title: string;
+  /** SECURITY: that profile's plex.tv token. Server-side only. */
+  token: string;
+};
 
 /** The host's chosen PMS and the connection verified to work from here. */
 export type SelectedServer = {

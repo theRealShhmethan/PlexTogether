@@ -59,6 +59,7 @@ is simpler and no less secure.
 | --- | --- | --- |
 | Plex password | only ever typed into plex.tv | never seen by us |
 | plex.tv token (full account access) | server memory (`src/lib/session/store.ts`) | **never** |
+| Plex Home profile token (after switching profile) | server memory | **never** |
 | Per-server `accessToken`s from `/resources` | server memory | **never** (Phase 5 will need one in the host's browser; see §5) |
 | Device private key (JWT mode) | server memory, non-extractable | **never** |
 | Session id (random 256-bit) | `pt_session` cookie, HttpOnly, SameSite=Lax, Secure in prod | yes, as an opaque id |
@@ -73,6 +74,19 @@ Before any server token is sent to a connection, `/identity` must return the exp
 token stays valid on plex.tv**. It's held only in memory, so this only matters if the server
 process was compromised while you were signed in. To revoke it for certain, remove
 "PlexTogether" under plex.tv → Account → Authorized Devices. (A discarded JWT lapses within 7 days.)
+
+### Plex Home profiles
+
+If the signed-in account is a Plex Home admin, the host can switch to another Home profile
+(for example their own profile under a parent's account). That profile's token then replaces
+the account token for server discovery, browsing and (later) playback. That means its own watch
+history applies, and a managed profile's library restrictions apply too. The account token is
+kept only to list and switch profiles.
+
+**Undocumented:** `GET /api/v2/home/users` and `POST /api/v2/home/users/{id}/switch` aren't in
+Plex's official docs. They're what Plex's own apps use, and python-plexapi relies on them.
+Response shapes are validated loosely (`src/lib/plex/home.ts`). A profile PIN is forwarded to
+plex.tv over HTTPS and never stored or logged.
 
 Everything is in memory: if the server restarts, the host signs in again. That's acceptable for v0.1.
 

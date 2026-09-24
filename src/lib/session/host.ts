@@ -20,7 +20,16 @@ export async function getCurrentSession(): Promise<HostSession | undefined> {
 }
 
 /**
- * Returns a usable plex.tv token for the session. Legacy tokens are returned
+ * Token for plex.tv / server access: the switched-to Home profile's token if
+ * one is active, otherwise the account token.
+ */
+export async function getActiveToken(session: HostSession): Promise<string> {
+  return session.profile?.token ?? (await getFreshPlexToken(session));
+}
+
+/**
+ * Returns the signed-in *account's* plex.tv token (used for managing Home
+ * profiles; use getActiveToken for everything else). Legacy tokens are returned
  * as-is; JWTs are refreshed when close to (or past) expiry — Plex allows
  * refresh even after expiry. Only use the result for server-side requests.
  */

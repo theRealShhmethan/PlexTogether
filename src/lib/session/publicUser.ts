@@ -9,6 +9,8 @@ export type PublicUser = {
   username: string | null;
   /** null when Plex didn't say. Relevant to Plex's remote-playback rules. */
   plexPass: boolean | null;
+  /** Active Plex Home profile, if switched. */
+  profile: string | null;
 };
 
 export function toPublicUser(session: HostSession): PublicUser {
@@ -17,5 +19,6 @@ export function toPublicUser(session: HostSession): PublicUser {
     displayName: u.friendlyName || u.title || u.username || "Plex user",
     username: u.username ?? null,
     plexPass: u.subscription?.active ?? null,
+    profile: session.profile?.title ?? null,
   };
 }

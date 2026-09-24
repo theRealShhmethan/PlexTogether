@@ -321,3 +321,34 @@ a {
   height: 100%;
   background: var(--accent);
 }
+
+.profile-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.row select,
+.row input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 10px;
+  font-size: 1rem;
+}
+
+.row input {
+  width: 6.5em;
+}
+
+.row .button {
+  align-self: center;
+}

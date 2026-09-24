@@ -1,3 +1,4 @@
+import { ProfileSwitcher } from "@/components/ProfileSwitcher";
 import { ServerPicker } from "@/components/ServerPicker";
 import { SignInButton } from "@/components/SignInButton";
 import { SignOutButton } from "@/components/SignOutButton";
@@ -19,8 +20,14 @@ export default async function Home() {
         <section className="panel">
           <h2>Signed in with Plex</h2>
           <dl>
-            <dt>Name</dt>
+            <dt>Account</dt>
             <dd>{user.displayName}</dd>
+            {user.profile && (
+              <>
+                <dt>Profile</dt>
+                <dd>{user.profile}</dd>
+              </>
+            )}
             {user.username && (
               <>
                 <dt>Username</dt>
@@ -30,6 +37,7 @@ export default async function Home() {
             <dt>Plex Pass</dt>
             <dd>{user.plexPass === null ? "Unknown" : user.plexPass ? "Active" : "Not active"}</dd>
           </dl>
+          <ProfileSwitcher />
           <SignOutButton />
         </section>
       ) : (
@@ -43,7 +51,7 @@ export default async function Home() {
         </section>
       )}
 
-      {user && <ServerPicker />}
+      {user && <ServerPicker key={user.profile ?? "account"} />}
       {user && <p className="muted">Playback and watch parties are not built yet.</p>}
     </>
   );

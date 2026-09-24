@@ -1,7 +1,7 @@
 import "server-only";
 import { connectionKind, probeAll, type ProbeFailure, type ProbeResult } from "@/lib/plex/connectivity";
 import { fetchServers, type PlexServer } from "@/lib/plex/resources";
-import { getFreshPlexToken, plexClientFor } from "@/lib/session/host";
+import { getActiveToken, plexClientFor } from "@/lib/session/host";
 import { saveSession, type HostSession, type SelectedServer } from "@/lib/session/store";
 
 /**
@@ -39,7 +39,7 @@ export type PublicSelection = {
 };
 
 export async function listServers(session: HostSession): Promise<PlexServer[]> {
-  const token = await getFreshPlexToken(session);
+  const token = await getActiveToken(session);
   const servers = await fetchServers(plexClientFor(session.clientIdentifier), token);
   session.servers = servers;
   // Drop a selection whose server has disappeared from the account.

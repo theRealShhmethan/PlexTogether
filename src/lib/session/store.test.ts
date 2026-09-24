@@ -39,6 +39,6 @@ describe("session store", () => {
     const json = JSON.stringify(toPublicUser(s));
     expect(json).not.toContain("secret-jwt");
     expect(json).not.toContain("e@example.com");
-    expect(Object.keys(toPublicUser(s)).sort()).toEqual(["displayName", "plexPass", "username"]);
+    expect(Object.keys(toPublicUser(s)).sort()).toEqual(["displayName", "plexPass", "profile", "username"]);
   });
 });
