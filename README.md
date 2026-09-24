@@ -10,7 +10,7 @@ media; PlexTogether handles rooms and synchronization.
 | --- | --- | --- |
 | 1 | Project foundation | ✅ done |
 | 2 | Plex sign-in (JWT PIN flow) | ✅ done — verified with a real account (Chrome, Windows) |
-| 3 | Server discovery | ⏳ not started |
+| 3 | Server discovery + connectivity check | ✅ implemented, **needs a real-server test** |
 | 4 | Library browsing | ⏳ not started |
 | 5 | Playback proof of concept | ⏳ not started |
 | 6 | Rooms / invites | ⏳ blocked on a guest-access decision (see below) |
@@ -88,7 +88,8 @@ Target: host on Chrome/Edge (Windows), guest on Chrome (macOS). Safari is desira
 
 ## Current limitations
 
-- Sign-in only. No server discovery, browsing, playback, rooms, or sync yet.
+- Sign-in and server selection only. No browsing, playback, rooms, or sync yet.
+- Connectivity is checked from the PlexTogether server, not the browser. On localhost these are the same machine; once hosted elsewhere, Phase 5 will also need a browser-side check.
 - Sessions are lost on restart. Single process only.
 - Remote guests need the app served over HTTPS at a public URL. Localhost only works for testing on your own machine.
 

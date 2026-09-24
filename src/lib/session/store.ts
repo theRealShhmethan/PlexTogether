@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { DeviceKey } from "@/lib/plex/deviceKey";
+import type { PlexConnection, PlexServer } from "@/lib/plex/resources";
 import type { PlexUser } from "@/lib/plex/schemas";
 
 /**
@@ -29,6 +30,23 @@ export type HostSession = {
   user: PlexUser;
   createdAt: number;
   expiresAt: number;
+  /** Last server list from plex.tv (contains per-server access tokens). */
+  servers?: PlexServer[];
+  selectedServer?: SelectedServer;
+};
+
+/** The host's chosen PMS and the connection verified to work from here. */
+export type SelectedServer = {
+  serverId: string;
+  name: string;
+  owned: boolean;
+  ownerName: string | null;
+  version: string | null;
+  /** SECURITY: PMS credential. Server-side only. */
+  accessToken: string;
+  connection: PlexConnection;
+  latencyMs: number;
+  checkedAt: number;
 };
 
 export const PENDING_LOGIN_TTL_MS = 15 * 60 * 1000;

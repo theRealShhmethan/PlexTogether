@@ -1,3 +1,4 @@
+import { ServerPicker } from "@/components/ServerPicker";
 import { SignInButton } from "@/components/SignInButton";
 import { SignOutButton } from "@/components/SignOutButton";
 import { getCurrentSession } from "@/lib/session/host";
@@ -11,7 +12,7 @@ export default async function Home() {
     <>
       <header>
         <h1>PlexTogether</h1>
-        <p className="muted">Watch your Plex library together, in sync. (v0.1 — sign-in only)</p>
+        <p className="muted">Watch your Plex library together, in sync. (v0.1 — work in progress)</p>
       </header>
 
       {user ? (
@@ -29,7 +30,6 @@ export default async function Home() {
             <dt>Plex Pass</dt>
             <dd>{user.plexPass === null ? "Unknown" : user.plexPass ? "Active" : "Not active"}</dd>
           </dl>
-          <p className="muted">Server selection, library browsing and watch parties are not built yet.</p>
           <SignOutButton />
         </section>
       ) : (
@@ -42,6 +42,9 @@ export default async function Home() {
           <SignInButton />
         </section>
       )}
+
+      {user && <ServerPicker />}
+      {user && <p className="muted">Library browsing and watch parties are not built yet.</p>}
     </>
   );
 }

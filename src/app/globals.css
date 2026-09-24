@@ -94,3 +94,49 @@ dt {
 a {
   color: var(--accent);
 }
+
+.small {
+  font-size: 0.85rem;
+}
+
+.status {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.status.ok {
+  border-color: #3d6b4a;
+}
+
+.status.bad {
+  border-color: #7a3d3d;
+}
+
+.status ul {
+  padding-left: 18px;
+}
+
+.server-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.server {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.server .button {
+  align-self: center;
+  flex-shrink: 0;
+}
