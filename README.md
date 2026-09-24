@@ -9,7 +9,7 @@ media; PlexTogether handles rooms and synchronization.
 | Phase | Feature | Status |
 | --- | --- | --- |
 | 1 | Project foundation | ✅ done |
-| 2 | Plex sign-in (JWT PIN flow) | ✅ done — verified with a real account (Chrome, Windows) |
+| 2 | Plex sign-in (PIN flow) | ✅ done — verified with a real account (Chrome, Windows) |
 | 3 | Server discovery + connectivity check | ✅ implemented, **needs a real-server test** |
 | 4 | Library browsing | ⏳ not started |
 | 5 | Playback proof of concept | ⏳ not started |
@@ -66,19 +66,23 @@ Open **exactly** the URL in `APP_URL` (default `http://localhost:3000`, not
 | --- | --- | --- |
 | `APP_URL` | `http://localhost:3000` | Public origin; used for the Plex return URL and CSRF origin checks |
 | `PLEX_PRODUCT_NAME` | `PlexTogether` | Name shown in plex.tv → Authorized Devices |
+| `PLEX_AUTH_MODE` | `legacy` | `legacy` or `jwt`. JWT is Plex's recommended method, but Plex Media Server currently rejects JWTs, so leave this on `legacy` for now |
 
 There are no secrets in env today. Plex tokens are obtained at runtime and held only in server memory.
 
 ## Security model (short version)
 
 - You sign in **on plex.tv**. PlexTogether never sees your password.
-- Your Plex token and the device signing key live **only in server memory**. The
+- Your Plex token and your servers' access tokens live **only in server memory**. The
   browser gets an opaque HttpOnly session cookie. Tokens never go into HTML, JS,
   URLs, `localStorage`, logs, or (later) WebSocket messages.
-- Uses Plex's recommended short-lived JWTs (7 days, refreshable) and refuses the
-  long-lived legacy token Plex silently falls back to if the key isn't accepted.
+- Sign-in uses Plex's documented **legacy** PIN flow. Plex's newer JWT method is
+  implemented (`PLEX_AUTH_MODE=jwt`), but Plex Media Server currently rejects JWT
+  tokens. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#2-plex-authentication-implemented-in-v01).
+- A server's token is only sent after that address proves it's the expected server (`/identity`).
 - POST routes require a same-origin `Origin` header.
-- Sign out discards the token. To revoke immediately, remove "PlexTogether" under
+- Sign out discards the token, but legacy tokens **stay valid on plex.tv** until revoked
+  (Plex has no documented revoke API). To revoke, remove "PlexTogether" under
   plex.tv → Account → Authorized Devices.
 - Restarting the server signs everyone out (sessions are in memory).
 

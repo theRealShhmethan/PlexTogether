@@ -6,7 +6,7 @@ import type { PlexClientInfo } from "@/lib/plex/client";
 import { COOKIE_SESSION } from "./cookies";
 import { getSession, saveSession, type HostSession } from "./store";
 
-/** Refresh the Plex JWT when it has less than this long left. */
+/** Refresh a Plex JWT when it has less than this long left. */
 const REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export function plexClientFor(clientIdentifier: string): PlexClientInfo {
@@ -20,15 +20,16 @@ export async function getCurrentSession(): Promise<HostSession | undefined> {
 }
 
 /**
- * Returns a usable Plex JWT for the session, refreshing it if it is close to
- * (or past) expiry. Plex allows refresh even after expiry.
- * The returned token must only be used for server-side requests.
+ * Returns a usable plex.tv token for the session. Legacy tokens are returned
+ * as-is; JWTs are refreshed when close to (or past) expiry — Plex allows
+ * refresh even after expiry. Only use the result for server-side requests.
  */
-export async function getFreshPlexJwt(session: HostSession): Promise<string> {
-  if (session.plexJwtExpiresAt - Date.now() > REFRESH_WINDOW_MS) return session.plexJwt;
-  const { plexJwt, expiresAt } = await refreshPlexJwt(plexClientFor(session.clientIdentifier), session.deviceKey);
-  session.plexJwt = plexJwt;
-  session.plexJwtExpiresAt = expiresAt;
+export async function getFreshPlexToken(session: HostSession): Promise<string> {
+  const cred = session.plex;
+  if (cred.mode === "legacy") return cred.token;
+  if (cred.expiresAt - Date.now() > REFRESH_WINDOW_MS) return cred.token;
+  const { plexJwt, expiresAt } = await refreshPlexJwt(plexClientFor(session.clientIdentifier), cred.deviceKey);
+  session.plex = { ...cred, token: plexJwt, expiresAt };
   saveSession(session);
   return plexJwt;
 }

@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import type { PlexAuthMode } from "@/lib/plex/auth";
 
 /**
  * Server-side configuration, read from environment variables.
@@ -12,6 +13,9 @@ const EnvSchema = z.object({
   APP_URL: z.url().default("http://localhost:3000"),
   // Shown in the user's plex.tv "Authorized Devices" list.
   PLEX_PRODUCT_NAME: z.string().min(1).max(64).default("PlexTogether"),
+  // "legacy" (default) or "jwt". JWT is Plex's recommended flow, but Plex Media
+  // Server currently rejects JWTs — see src/lib/plex/auth.ts.
+  PLEX_AUTH_MODE: z.enum(["legacy", "jwt"]).default("legacy"),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 });
 
@@ -19,6 +23,7 @@ export type AppConfig = {
   appOrigin: string;
   productName: string;
   productVersion: string;
+  authMode: PlexAuthMode;
   isProduction: boolean;
 };
 
@@ -32,6 +37,7 @@ export function getConfig(): AppConfig {
     appOrigin: url.origin,
     productName: env.PLEX_PRODUCT_NAME,
     productVersion: "0.1.0",
+    authMode: env.PLEX_AUTH_MODE,
     isProduction: env.NODE_ENV === "production",
   };
   return cached;

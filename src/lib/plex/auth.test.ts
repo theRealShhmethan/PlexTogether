@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { acceptPlexJwt, buildAuthAppUrl, checkPin, createPin } from "./auth";
+import { acceptPlexJwt, buildAuthAppUrl, checkJwtPin, checkLegacyPin, createJwtPin, createLegacyPin } from "./auth";
 import { PlexApiError } from "./client";
 import { generateDeviceKey } from "./deviceKey";
 
@@ -41,13 +41,36 @@ describe("acceptPlexJwt", () => {
   });
 });
 
-describe("Plex requests", () => {
-  it("createPin sends the public JWK and strong=true, without any token", async () => {
+describe("legacy PIN flow", () => {
+  it("creates a strong PIN on plex.tv without a JWK or token", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ id: 7, code: "c", authToken: null }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createLegacyPin(client);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://plex.tv/api/v2/pins?strong=true");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeUndefined();
+    expect((init.headers as Record<string, string>)["X-Plex-Token"]).toBeUndefined();
+  });
+
+  it("returns the claimed token, with no expiry", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id: 7, code: "c", authToken: "legacy123" })));
+    await expect(checkLegacyPin(client, 7)).resolves.toEqual({ status: "authorized", token: "legacy123", expiresAt: null });
+  });
+
+  it("reports pending until claimed", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id: 7, code: "c", authToken: null })));
+    await expect(checkLegacyPin(client, 7)).resolves.toEqual({ status: "pending" });
+  });
+});
+
+describe("JWT PIN flow", () => {
+  it("createJwtPin sends the public JWK and strong=true, without any token", async () => {
     const fetchMock = vi.fn(async () => Response.json({ id: 42, code: "code", authToken: null }));
     vi.stubGlobal("fetch", fetchMock);
     const key = await generateDeviceKey();
 
-    const pin = await createPin(client, key);
+    const pin = await createJwtPin(client, key);
 
     expect(pin).toEqual({ id: 42, code: "code", authToken: null });
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -58,22 +81,22 @@ describe("Plex requests", () => {
     expect(headers["X-Plex-Token"]).toBeUndefined();
   });
 
-  it("checkPin reports pending until authToken is set", async () => {
+  it("checkJwtPin reports pending until authToken is set", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id: 42, code: "code", authToken: null })));
     const key = await generateDeviceKey();
-    await expect(checkPin(client, key, 42)).resolves.toEqual({ status: "pending" });
+    await expect(checkJwtPin(client, key, 42)).resolves.toEqual({ status: "pending" });
   });
 
-  it("checkPin refuses Plex's silent legacy-token fallback", async () => {
+  it("checkJwtPin refuses Plex's silent legacy-token fallback", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id: 42, code: "code", authToken: "legacy123" })));
     const key = await generateDeviceKey();
-    await expect(checkPin(client, key, 42)).rejects.toThrow(/legacy/);
+    await expect(checkJwtPin(client, key, 42)).rejects.toThrow(/legacy/);
   });
 
   it("maps HTTP errors to PlexApiError without leaking the URL", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 404 })));
     const key = await generateDeviceKey();
-    const err = await checkPin(client, key, 42).catch((e: unknown) => e);
+    const err = await checkJwtPin(client, key, 42).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(PlexApiError);
     expect((err as PlexApiError).status).toBe(404);
     expect((err as PlexApiError).message).not.toContain("deviceJWT");

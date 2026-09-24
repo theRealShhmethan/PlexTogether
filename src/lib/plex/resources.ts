@@ -53,12 +53,12 @@ export type PlexServer = {
   connections: PlexConnection[];
 };
 
-export async function fetchServers(client: PlexClientInfo, plexJwt: string): Promise<PlexServer[]> {
+export async function fetchServers(client: PlexClientInfo, token: string): Promise<PlexServer[]> {
   const url = `${PLEX_CLIENTS_API}/resources?${new URLSearchParams({ includeHttps: "1", includeRelay: "1", includeIPv6: "1" })}`;
   const raw = await plexRequest(
     "resources",
     url,
-    { method: "GET", headers: plexHeaders(client, plexJwt) },
+    { method: "GET", headers: plexHeaders(client, token) },
     z.array(z.unknown()),
   );
   return parseServers(raw);

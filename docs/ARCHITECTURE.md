@@ -19,40 +19,60 @@ Guest browser ───┘   ← see §4: how the guest is authorized is the ope
 
 ## 2. Plex authentication (implemented in v0.1)
 
-Plex's current docs recommend **JWT authentication** using the **PIN flow**.
-The older "legacy token" PIN flow still works but is labelled legacy. We use JWT:
+Both of Plex's documented sign-in methods use a **PIN flow**. The host signs in **on
+plex.tv** (`https://app.plex.tv/auth#?clientID=…&code=…&forwardUrl=…`), and PlexTogether
+reads the token off the claimed PIN. We never see the password. Set the method with `PLEX_AUTH_MODE`.
 
-1. The server generates an **Ed25519 key pair** for each login and keeps it in memory.
-2. `POST https://clients.plex.tv/api/v2/pins` with `{ jwk, strong: true }` registers the public key.
-3. The browser goes to `https://app.plex.tv/auth#?clientID=…&code=…&forwardUrl=…`.
-   The host signs in **on plex.tv**; PlexTogether never sees their password.
-4. After the redirect back, the server signs a short-lived device JWT
-   (`aud: plex.tv`, `iss: <clientIdentifier>`, header `kid`/`alg: EdDSA`) and calls
-   `GET /api/v2/pins/:id?deviceJWT=…`. `authToken` is the Plex JWT, valid for 7 days.
-5. Refresh uses the nonce flow: `GET /auth/nonce` → signed JWT with `nonce` and `scope`
-   → `POST /auth/token`. This happens lazily, less than 24 h before expiry.
+### Default: `legacy` ("Traditional Token Authentication")
 
-**Plex quirk:** if the JWK isn't matched, Plex *silently* returns a long-lived legacy
-token instead of a JWT (confirmed by Plex staff on the forum). We **refuse** non-JWT
-tokens, so a broken setup fails loudly instead of quietly storing a weaker credential.
+1. `POST https://plex.tv/api/v2/pins?strong=true` creates a PIN.
+2. The browser goes to the Plex auth app, and Plex redirects back to `/auth/callback`.
+3. `GET https://plex.tv/api/v2/pins/:id` returns `authToken` once the PIN is claimed.
+
+The token is **long-lived**: it doesn't expire until revoked.
+
+### Optional: `jwt` (Plex's recommended method, currently unusable)
+
+Plex's docs recommend JWT auth. The server generates an Ed25519 key pair and registers it
+with `POST clients.plex.tv/api/v2/pins { jwk, strong: true }`. After sign-in, it exchanges a
+signed device JWT for a 7-day Plex JWT, refreshed via the nonce flow. The code is complete
+and tested, and it works against plex.tv (verified 2026-09-23).
+
+**Why it isn't the default: Plex Media Server rejects JWTs.** When `/resources` is called
+with a JWT, it returns JWT server tokens too, and PMS answers every authenticated request with
+**401**. We saw this on PMS 1.42.1 (`remote https: token rejected`, `relay https: token rejected`,
+after `/identity` confirmed the right server). Other developers have reported it since
+2025-12 with no staff answer
+([forum thread](https://forums.plex.tv/t/question-on-https-clients-plex-tv-api-v2-resources-and-jwt-authentication/934478)).
+This contradicts the docs' statement that the JWT works against "your Plex Media Server
+instance". One workaround reported on the forum, getting legacy server tokens from the
+undocumented `/api/v2/devices` endpoint, is **not** used here. It's undocumented, and a legacy
+server token is just as long-lived as the legacy user token. Using the documented legacy flow
+is simpler and no less secure.
+
+**Plex quirk (JWT mode):** if the JWK isn't matched, Plex *silently* returns a legacy token
+(confirmed by Plex staff). In JWT mode we refuse it, so a broken setup fails loudly.
 
 ### Where secrets live
 
 | Item | Location | Reaches a browser? |
 | --- | --- | --- |
 | Plex password | only ever typed into plex.tv | never seen by us |
-| Plex JWT (full account access) | server memory (`src/lib/session/store.ts`) | **never** |
-| Device private key | server memory, non-extractable | **never** |
+| plex.tv token (full account access) | server memory (`src/lib/session/store.ts`) | **never** |
+| Per-server `accessToken`s from `/resources` | server memory | **never** (Phase 5 will need one in the host's browser; see §5) |
+| Device private key (JWT mode) | server memory, non-extractable | **never** |
 | Session id (random 256-bit) | `pt_session` cookie, HttpOnly, SameSite=Lax, Secure in prod | yes, as an opaque id |
 | Client identifier (not secret) | `pt_cid` cookie | yes |
 
 Other controls: same-origin (`Origin`) checks on every POST route; `Referrer-Policy: no-referrer`;
 `frame-ancestors 'none'`; Plex errors are logged without URLs or headers; responses are validated with zod;
-the browser only receives an explicit allowlist of account fields (`toPublicUser`).
+the browser only receives an explicit allowlist of fields (`toPublicUser`, `toPublicServer`).
+Before any server token is sent to a connection, `/identity` must return the expected machine id.
 
-Sign-out deletes the JWT and key. Plex documents no revoke endpoint, so the orphaned JWT
-lapses within 7 days (it can't be refreshed without the key). The host can revoke it
-immediately under plex.tv → Account → Authorized Devices.
+**Sign-out** discards the token, but Plex documents no revoke endpoint, so **a discarded legacy
+token stays valid on plex.tv**. It's held only in memory, so this only matters if the server
+process was compromised while you were signed in. To revoke it for certain, remove
+"PlexTogether" under plex.tv → Account → Authorized Devices. (A discarded JWT lapses within 7 days.)
 
 Everything is in memory: if the server restarts, the host signs in again. That's acceptable for v0.1.
 
@@ -66,8 +86,8 @@ The tokens available to the host:
 
 | Token | Source | Scope |
 | --- | --- | --- |
-| Plex JWT | PIN flow | the whole plex.tv account **and** the host's PMS (docs: "any Plex.tv endpoint or your Plex Media Server instance") |
-| Server `accessToken` | `GET clients.plex.tv/api/v2/resources` | for the server owner: admin on that PMS |
+| plex.tv token (legacy or JWT) | PIN flow | the whole plex.tv account (legacy tokens also work on the host's PMS; JWTs currently don't, see §2) |
+| Server `accessToken` | `GET clients.plex.tv/api/v2/resources` | for a server you own: admin on that PMS. For a server shared with you: limited to what was shared |
 | Transient token | `POST /security/token?type=delegation&scope=all` on PMS | docs: *"the same access level as the caller's token"*, valid up to 48 h, destroyed on PMS restart. `delegation`/`all` are the **only** supported values |
 
 Plex documents no token scoped to one item, one library, or read-only playback.
@@ -122,8 +142,10 @@ turns out to be a real blocker. **Decision needed from the project owner before 
 
 ## 5. Host playback (Phase 5, planned)
 
-The host's own browser plays from PMS using the server `accessToken` (not the plex.tv JWT),
-which is equivalent to Plex Web. The token is scoped to that one server and is only given to
+The host's own browser has to hold a PMS token to play (it goes in the media URLs). Rather than the
+long-lived server `accessToken`, we plan to give the host's browser a **transient token**
+(`POST /security/token`, max 48 h, dies on PMS restart). It has the same access, but a leak
+expires on its own. (Plex Web likewise holds a server token in the browser.) It is scoped to that one server and is only given to
 the host's authenticated session. It's never stored in `localStorage` and never sent over the
 sync WebSocket. We'll use `/video/:/transcode/universal/decision` + `start.m3u8` (HLS; Chrome
 needs hls.js, Safari is native) with a direct-play fallback for browser-compatible files, and

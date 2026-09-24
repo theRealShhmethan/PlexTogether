@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { getConfig } from "@/lib/config";
 import { isSameOrigin, jsonError } from "@/lib/http/security";
-import { checkPin, fetchPlexUser } from "@/lib/plex/auth";
+import { checkJwtPin, checkLegacyPin, fetchPlexUser } from "@/lib/plex/auth";
 import { PlexApiError } from "@/lib/plex/client";
 import { COOKIE_PENDING, COOKIE_SESSION, setSecureCookie } from "@/lib/session/cookies";
 import { plexClientFor } from "@/lib/session/host";
@@ -12,6 +12,8 @@ import {
   randomId,
   saveSession,
   SESSION_TTL_MS,
+  type HostSession,
+  type PlexCredential,
 } from "@/lib/session/store";
 
 /**
@@ -28,21 +30,26 @@ export async function POST(request: Request) {
 
   const client = plexClientFor(pending.clientIdentifier);
   try {
-    const result = await checkPin(client, pending.deviceKey, pending.pinId);
+    const result = pending.deviceKey
+      ? await checkJwtPin(client, pending.deviceKey, pending.pinId)
+      : await checkLegacyPin(client, pending.pinId);
     if (result.status === "pending") {
       return Response.json({ status: "pending" }, { status: 202, headers: { "Cache-Control": "no-store" } });
     }
 
-    const user = await fetchPlexUser(client, result.plexJwt);
+    const user = await fetchPlexUser(client, result.token);
+
+    const plex: PlexCredential =
+      pending.deviceKey && result.expiresAt !== null
+        ? { mode: "jwt", token: result.token, expiresAt: result.expiresAt, deviceKey: pending.deviceKey }
+        : { mode: "legacy", token: result.token };
 
     // New random session id (never reuse the pending id) to prevent fixation.
     const now = Date.now();
-    const session = {
+    const session: HostSession = {
       id: randomId(),
       clientIdentifier: pending.clientIdentifier,
-      deviceKey: pending.deviceKey,
-      plexJwt: result.plexJwt,
-      plexJwtExpiresAt: result.expiresAt,
+      plex,
       user,
       createdAt: now,
       expiresAt: now + SESSION_TTL_MS,

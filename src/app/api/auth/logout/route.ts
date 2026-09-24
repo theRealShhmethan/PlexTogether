@@ -5,10 +5,12 @@ import { COOKIE_SESSION } from "@/lib/session/cookies";
 import { deleteSession } from "@/lib/session/store";
 
 /**
- * Discards the session, including the Plex JWT and device private key.
- * Without the key the JWT can no longer be refreshed, so it lapses within
- * 7 days. (Plex documents no device-revocation endpoint; the host can revoke
- * immediately under plex.tv → Account → Authorized Devices.)
+ * Discards the session and the Plex token it holds.
+ *
+ * SECURITY: Plex documents no sign-out/revoke endpoint. Discarding a legacy
+ * token does NOT invalidate it on plex.tv (it doesn't expire on its own); a
+ * discarded JWT lapses within 7 days. The host can revoke immediately under
+ * plex.tv → Account → Authorized Devices → PlexTogether.
  */
 export async function POST(request: Request) {
   if (!isSameOrigin(request, getConfig().appOrigin)) return jsonError(403, "Cross-origin request rejected");

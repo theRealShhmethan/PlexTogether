@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import type { PlexAuthMode } from "@/lib/plex/auth";
 import type { DeviceKey } from "@/lib/plex/deviceKey";
 import type { PlexConnection, PlexServer } from "@/lib/plex/resources";
 import type { PlexUser } from "@/lib/plex/schemas";
@@ -7,8 +8,8 @@ import type { PlexUser } from "@/lib/plex/schemas";
  * In-memory session store (v0.1). Everything is lost when the process
  * restarts, which simply means the host signs in again.
  *
- * SECURITY: this is the ONLY place the host's Plex JWT and device private key
- * live. Browsers receive an opaque random session id in an HttpOnly cookie;
+ * SECURITY: this is the ONLY place the host's Plex token (and, in JWT mode,
+ * the device private key) live. Browsers receive an opaque random session id in an HttpOnly cookie;
  * they never receive the token or the key.
  */
 
@@ -16,7 +17,9 @@ import type { PlexUser } from "@/lib/plex/schemas";
 export type PendingLogin = {
   id: string;
   clientIdentifier: string;
-  deviceKey: DeviceKey;
+  mode: PlexAuthMode;
+  /** JWT mode only. */
+  deviceKey: DeviceKey | null;
   pinId: number;
   expiresAt: number;
 };
@@ -24,9 +27,7 @@ export type PendingLogin = {
 export type HostSession = {
   id: string;
   clientIdentifier: string;
-  deviceKey: DeviceKey;
-  plexJwt: string;
-  plexJwtExpiresAt: number;
+  plex: PlexCredential;
   user: PlexUser;
   createdAt: number;
   expiresAt: number;
@@ -34,6 +35,15 @@ export type HostSession = {
   servers?: PlexServer[];
   selectedServer?: SelectedServer;
 };
+
+/**
+ * The host's plex.tv credential. SECURITY: full access to the Plex account.
+ * Legacy tokens don't expire on their own; JWTs expire after 7 days and are
+ * refreshed with the device key.
+ */
+export type PlexCredential =
+  | { mode: "legacy"; token: string }
+  | { mode: "jwt"; token: string; expiresAt: number; deviceKey: DeviceKey };
 
 /** The host's chosen PMS and the connection verified to work from here. */
 export type SelectedServer = {
