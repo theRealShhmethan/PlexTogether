@@ -17,6 +17,8 @@ type StartResponse = PlaybackStart & { location: "lan" | "wan" };
 const TIMELINE_INTERVAL_MS = 10_000;
 /** A seek is "local" (instant) only if at least this much is buffered after the target. */
 const LOCAL_SEEK_MARGIN_S = 1;
+/** Network hiccups: retry loading this many times (with backoff) before starting a fresh session. */
+const NETWORK_RETRIES = 3;
 
 /**
  * Loads a Plex HLS stream into a <video> via hls.js and exposes playback in
@@ -39,6 +41,10 @@ export function usePlexStream(startUrl: string, knownDurationMs: number | null) 
   /** Media time at playlist time 0 for the current session. */
   const baseMsRef = useRef(0);
   const loadSeq = useRef(0);
+  /** Fresh sessions started to recover from network failure since the last successful fragment. */
+  const recoveriesRef = useRef(0);
+  /** Lets the error handler start a fresh session without `load` referring to itself. */
+  const reloadRef = useRef<((fromMs: number) => void) | null>(null);
   const [phase, setPhase] = useState<StreamPhase>({ kind: "idle" });
 
   const mediaTimeMs = useCallback(() => {
@@ -132,6 +138,11 @@ export function usePlexStream(startUrl: string, knownDurationMs: number | null) 
         });
         hlsRef.current = hls;
         let detected = false;
+        let networkFailures = 0;
+        hls.on(Hls.Events.FRAG_LOADED, () => {
+          networkFailures = 0;
+          recoveriesRef.current = 0;
+        });
         hls.on(Hls.Events.LEVEL_LOADED, (_e, data) => {
           if (detected) return;
           detected = true;
@@ -149,6 +160,22 @@ export function usePlexStream(startUrl: string, knownDurationMs: number | null) 
           if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
             hls.recoverMediaError();
             return;
+          }
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR && seq === loadSeq.current) {
+            // Brief outage (Wi-Fi/VPN blip): retry with backoff, then try a fresh Plex session here.
+            if (networkFailures < NETWORK_RETRIES) {
+              const delay = 1000 * 2 ** networkFailures++;
+              window.setTimeout(() => {
+                if (hlsRef.current === hls) hls.startLoad();
+              }, delay);
+              return;
+            }
+            if (recoveriesRef.current < 1) {
+              recoveriesRef.current++;
+              const at = baseMsRef.current + video.currentTime * 1000;
+              reloadRef.current?.(at);
+              return;
+            }
           }
           const hint =
             data.type === Hls.ErrorTypes.NETWORK_ERROR
@@ -171,6 +198,10 @@ export function usePlexStream(startUrl: string, knownDurationMs: number | null) 
     },
     [startUrl, teardown, knownDurationMs],
   );
+
+  useEffect(() => {
+    reloadRef.current = (fromMs) => void load(fromMs, { restart: true });
+  }, [load]);
 
   /** True if media time `ms` is already buffered (so a seek there is instant). */
   const isBuffered = useCallback((ms: number) => {

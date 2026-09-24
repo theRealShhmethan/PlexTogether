@@ -20,6 +20,21 @@ const appOrigin = new URL(process.env.APP_URL ?? "http://localhost:3000").origin
 async function main() {
   // Imported after env is loaded (the room code reads session storage).
   const { handleRoomUpgrade } = await import("./src/lib/rooms/socket");
+  const { configureRoomPersistence, flushRooms } = await import("./src/lib/rooms/hub");
+  const { parseSessionSecret } = await import("./src/lib/crypto/sealedFile");
+
+  // Save rooms (encrypted, next to saved sessions) so a restart doesn't end watch parties.
+  const secret = process.env.SESSION_SECRET;
+  const restored = configureRoomPersistence(
+    secret ? { key: parseSessionSecret(secret), path: process.env.ROOMS_STORE_PATH ?? ".data/rooms.enc.json" } : null,
+  );
+  if (restored > 0) console.log(`> Restored ${restored} watch part${restored === 1 ? "y" : "ies"}`);
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.once(signal, () => {
+      flushRooms();
+      process.exit(0);
+    });
+  }
 
   const app = next({ dev: !production, port });
   const handle = app.getRequestHandler();

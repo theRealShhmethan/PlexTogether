@@ -558,3 +558,7 @@ a.button {
   padding: 5px 10px;
   font-size: 0.85rem;
 }
+
+.button.unmute {
+  align-self: stretch;
+}

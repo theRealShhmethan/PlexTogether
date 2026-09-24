@@ -203,7 +203,14 @@ and use `relay` only as a last resort.
 - **Status:** participants report drift, buffering and player-loaded state once a second (broadcasts coalesced to at most 1/s), which drives "Synced · 82 ms".
 - **Guest video = Option A (for now):** each participant streams with **their own** Plex sign-in in that browser. A guest without one is asked to sign in and returned to the room via a validated `returnTo`. Nobody ever receives another person's token.
 
-**Planned for Phase 8:**
+**Phase 8 as built (recovery):**
+- **Buffering:** handled as described above.
+- **Disconnects:** when a participant's last socket closes, they're no longer counted as ready or buffering, so the room never waits for someone who's gone. The client socket reconnects with backoff and receives the current state, and the player follows it again.
+- **Stream hiccups:** fatal hls.js network errors are retried 3 times with backoff (1/2/4 s). After that, one fresh Plex session is started at the current position, and only then is an error shown.
+- **Reload or reopened link:** a per-browser flag (`localStorage`, room-scoped, cleared on leave/end) reloads the video automatically once the socket connects. If the browser blocks autoplay with sound, playback starts muted with a "click to turn sound on" button.
+- **Server restart:** rooms and guest seats are saved (sealed with `SESSION_SECRET`, purpose-bound, `ROOMS_STORE_PATH`), debounced at 1 s and written on SIGINT/SIGTERM. On startup, unexpired rooms are restored with live state reset. A room that was playing comes back **paused** at the position it had reached when saved.
+
+**Originally planned for Phase 8 (kept for reference):**
 
 - Room ids / invite tokens: 128+ bits from `crypto.randomBytes`, unguessable. Rooms are in memory
   and expire (e.g. 6 h, or when the host ends them).

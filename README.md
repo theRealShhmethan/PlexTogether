@@ -14,8 +14,8 @@ media; PlexTogether handles rooms and synchronization.
 | 4 | Library browsing, Continue Watching, search, pick an item; Plex Home profile switching | ✅ done — verified against a real PMS |
 | 5 | Playback proof of concept (host, HLS via Plex's transcoder, progress saved to Plex) | ✅ implemented, **needs a real-server test** |
 | 6 | Rooms: invite link, join with a name, participants, ready, end, expiry | ✅ done — verified with two browsers |
-| 7 | Playback sync: Start Together, shared play/pause/seek with per-guest permissions, clock sync, drift correction | ✅ implemented, **needs a two-browser test** (first test found the seek stall, now fixed) |
-| 8 | Buffering / reconnect | ⏳ not started |
+| 7 | Playback sync: Start Together, shared play/pause/seek with per-guest permissions, clock sync, drift correction | ✅ done — verified with two browsers after tuning |
+| 8 | Buffering pauses the room ("Waiting for …"), coordinated resume, stream/network recovery, auto-rejoin after reload, rooms survive restarts | ✅ implemented, **needs a real-world test** (buffering part verified) |
 
 ### ⚠️ Guest mode limitation
 
@@ -70,6 +70,7 @@ Open **exactly** the URL in `APP_URL` (default `http://localhost:3000`, not
 | `PLEX_PRODUCT_NAME` | `PlexTogether` | Name shown in plex.tv → Authorized Devices |
 | `SESSION_SECRET` | *(unset)* | **Secret.** 32 random bytes (base64). When set, sign-ins, including the selected Plex Home profile, server and pick, are saved **encrypted** so a restart doesn't sign you out. Unset means memory only. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` |
 | `SESSION_STORE_PATH` | `.data/sessions.enc.json` | Where the encrypted sessions are saved (gitignored) |
+| `ROOMS_STORE_PATH` | `.data/rooms.enc.json` | Where watch parties are saved, encrypted with `SESSION_SECRET` (gitignored) |
 | `PLEX_AUTH_MODE` | `legacy` | `legacy` or `jwt`. JWT is Plex's recommended method, but Plex Media Server currently rejects JWTs, so leave this on `legacy` for now |
 
 `SESSION_SECRET` is the only secret. Keep it in `.env.local`, which is gitignored. Plex tokens are obtained at sign-in, not configured.
@@ -99,7 +100,7 @@ Target: host on Chrome/Edge (Windows), guest on Chrome (macOS). Safari is desira
 - Sign-in, server selection and library browsing only. No playback, rooms, or sync yet.
 - Posters are fetched through PlexTogether (`/api/plex/image`, allowlisted Plex image paths only) so the server token never reaches the browser.
 - Connectivity is checked from the PlexTogether server, not the browser. On localhost these are the same machine; once hosted elsewhere, Phase 5 will also need a browser-side check.
-- Single process only. JWT-mode sessions aren't saved across restarts. Rooms are memory-only, so a restart ends them.
+- Single process only. JWT-mode sessions aren't saved across restarts. With `SESSION_SECRET` set, rooms survive a restart (they come back paused). Without it, a restart ends them.
 - Remote guests need the app served over HTTPS at a public URL. Localhost only works for testing on your own machine.
 
 ## Roadmap

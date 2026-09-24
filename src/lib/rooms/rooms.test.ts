@@ -1,9 +1,23 @@
+import { randomBytes } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { _resetStores, saveSession, type HostSession } from "@/lib/session/store";
-import { _resetRooms, createRoom, endRoom, getRoom, joinRoom, leaveRoom, resolveGuest } from "./hub";
+import {
+  _resetRooms,
+  configureRoomPersistence,
+  createRoom,
+  endRoom,
+  flushRooms,
+  getRoom,
+  joinRoom,
+  leaveRoom,
+  resolveGuest,
+} from "./hub";
 import type { PublicRoom, ServerMessage } from "./protocol";
 import { handleRoomUpgrade } from "./socket";
 
@@ -345,5 +359,86 @@ describe("buffering pauses the room and resumes together", () => {
     expect(getRoom(room.id)!.playback.by).toBe(room.hostParticipantId);
     host.ws.close();
     guest.ws.close();
+  });
+});
+
+describe("recovery", () => {
+  it("stops waiting for someone whose connection is gone", async () => {
+    const session = hostSession();
+    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "T", item });
+    if (!r.ok) throw new Error();
+    const j = joinRoom(r.room.id, "Lexi");
+    if (!j.ok) throw new Error();
+    const host = await connect(r.room.id, `pt_session=${session.id}`);
+    const guest = await connect(r.room.id, `pt_guest=${j.secret}`);
+    host.ws.send(JSON.stringify({ type: "control", action: "play", positionMs: 1000, latencyMs: 0 }));
+    await until(() => (getRoom(r.room.id)?.playback.status === "playing" ? true : undefined));
+    guest.ws.send(JSON.stringify({ type: "status", playerReady: true, buffering: true, driftMs: 0, positionMs: 2000 }));
+    await until(() => (getRoom(r.room.id)?.waitingFor.size ? true : undefined), 3000);
+
+    guest.ws.close();
+    const resumed = await until(() =>
+      getRoom(r.room.id)?.playback.status === "playing" ? getRoom(r.room.id)!.playback : undefined,
+    );
+    expect(resumed.positionMs).toBe(2000);
+    expect(getRoom(r.room.id)!.waitingFor.size).toBe(0);
+    host.ws.close();
+  });
+});
+
+describe("room persistence", () => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+  function tempCfg() {
+    const dir = mkdtempSync(join(tmpdir(), "pt-rooms-"));
+    dirs.push(dir);
+    return { key: randomBytes(32), path: join(dir, "rooms.enc.json") };
+  }
+
+  it("restores rooms and guest seats after a restart, paused where they were", () => {
+    const cfg = tempCfg();
+    configureRoomPersistence(cfg);
+    const r = createRoom({ hostSessionId: "host-sess-SECRET", hostName: "Ethan", title: "Top Gun", item });
+    if (!r.ok) throw new Error();
+    const j = joinRoom(r.room.id, "Lexi");
+    if (!j.ok) throw new Error();
+    const room = getRoom(r.room.id)!;
+    room.playback = { status: "playing", positionMs: 60_000, anchorServerTime: Date.now() - 5000, by: null, seq: 3 };
+    flushRooms();
+
+    const file = readFileSync(cfg.path, "utf8");
+    expect(file).not.toContain("host-sess-SECRET");
+    expect(file).not.toContain(j.secret);
+    expect(file).not.toContain("Lexi");
+
+    _resetRooms(); // "restart"
+    expect(configureRoomPersistence(cfg)).toBe(1);
+    const back = getRoom(r.room.id)!;
+    expect(back.hostSessionId).toBe("host-sess-SECRET");
+    expect(back.playback.status).toBe("paused");
+    expect(back.playback.positionMs).toBeGreaterThanOrEqual(64_900);
+    expect(back.playback.positionMs).toBeLessThan(66_000);
+    expect(resolveGuest(j.secret)?.participant.name).toBe("Lexi");
+    expect(back.participants.get(j.participant.id)).toMatchObject({ playerReady: false, buffering: false });
+  });
+
+  it("drops expired rooms and ignores a file it can't decrypt", () => {
+    const cfg = tempCfg();
+    configureRoomPersistence(cfg);
+    const r = createRoom({ hostSessionId: "h", hostName: "Ethan", title: "T", item });
+    if (!r.ok) throw new Error();
+    getRoom(r.room.id)!.expiresAt = Date.now() + 50;
+    flushRooms();
+    _resetRooms();
+    expect(configureRoomPersistence({ ...cfg, key: randomBytes(32) })).toBe(0);
+    _resetRooms();
+    return new Promise<void>((done) =>
+      setTimeout(() => {
+        expect(configureRoomPersistence(cfg)).toBe(0);
+        done();
+      }, 80),
+    );
   });
 });

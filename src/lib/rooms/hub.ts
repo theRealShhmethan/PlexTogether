@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { readSealedFile, writeSealedFile } from "@/lib/crypto/sealedFile";
 import { expectedPositionMs, type PlaybackAnchor } from "@/lib/sync/drift";
 import type { Permissions, PublicRoom, ServerMessage } from "./protocol";
 
@@ -13,6 +14,10 @@ import type { Permissions, PublicRoom, ServerMessage } from "./protocol";
  * SECURITY: rooms hold no Plex tokens. A guest's seat is an opaque random
  * secret in an HttpOnly cookie; the room id itself is the invite capability
  * (128 random bits).
+ *
+ * PERSISTENCE: with SESSION_SECRET set, rooms are also saved (encrypted — they
+ * contain seat secrets and the host's session id) so a server restart doesn't
+ * end watch parties. Restored rooms come back paused where they were.
  */
 
 export const ROOM_TTL_MS = 6 * 60 * 60 * 1000;
@@ -87,10 +92,19 @@ type Hub = {
   guests: Map<string, { roomId: string; participantId: string }>;
   sockets: Map<string, Set<RoomConnection>>;
   sweeper: ReturnType<typeof setInterval> | null;
+  persist: { key: Buffer; path: string } | null;
+  saveTimer: ReturnType<typeof setTimeout> | null;
 };
 
 const g = globalThis as typeof globalThis & { __plexTogetherRooms?: Hub };
-const hub: Hub = (g.__plexTogetherRooms ??= { rooms: new Map(), guests: new Map(), sockets: new Map(), sweeper: null });
+const hub: Hub = (g.__plexTogetherRooms ??= {
+  rooms: new Map(),
+  guests: new Map(),
+  sockets: new Map(),
+  sweeper: null,
+  persist: null,
+  saveTimer: null,
+});
 
 if (!hub.sweeper) {
   hub.sweeper = setInterval(() => sweepExpired(), SWEEP_INTERVAL_MS);
@@ -98,6 +112,103 @@ if (!hub.sweeper) {
 }
 
 const randomToken = (bytes: number) => randomBytes(bytes).toString("base64url");
+
+// ---------- persistence ----------
+
+const ROOMS_PURPOSE = "plextogether-rooms-v1";
+const SAVE_DEBOUNCE_MS = 1000;
+
+type SavedParticipant = Pick<Participant, "id" | "name" | "role" | "ready" | "joinedAt" | "permissions">;
+type SavedRoom = Omit<Room, "participants" | "waitingFor" | "autoPauseSeq" | "broadcastTimer" | "bufferTimer"> & {
+  participants: SavedParticipant[];
+};
+type Snapshot = { savedAt: number; rooms: SavedRoom[]; guests: [string, { roomId: string; participantId: string }][] };
+
+function snapshot(): Snapshot {
+  return {
+    savedAt: Date.now(),
+    rooms: [...hub.rooms.values()].map((r) => ({
+      id: r.id,
+      code: r.code,
+      title: r.title,
+      hostSessionId: r.hostSessionId,
+      hostParticipantId: r.hostParticipantId,
+      item: r.item,
+      playback: r.playback,
+      createdAt: r.createdAt,
+      expiresAt: r.expiresAt,
+      participants: [...r.participants.values()].map((p) => ({
+        id: p.id,
+        name: p.name,
+        role: p.role,
+        ready: p.ready,
+        joinedAt: p.joinedAt,
+        permissions: p.permissions,
+      })),
+    })),
+    guests: [...hub.guests.entries()],
+  };
+}
+
+/** Writes the rooms file now (e.g. on shutdown). */
+export function flushRooms(): void {
+  if (hub.saveTimer) clearTimeout(hub.saveTimer);
+  hub.saveTimer = null;
+  if (hub.persist) writeSealedFile(hub.persist.path, hub.persist.key, ROOMS_PURPOSE, snapshot(), "rooms");
+}
+
+/** Schedules a save soon; cheap to call on every change. */
+function markDirty(): void {
+  if (!hub.persist || hub.saveTimer) return;
+  hub.saveTimer = setTimeout(flushRooms, SAVE_DEBOUNCE_MS);
+  hub.saveTimer.unref?.();
+}
+
+/**
+ * Enables persistence and restores saved rooms (call once at startup). Live
+ * state (connections, buffering, drift) isn't restored; a room that was
+ * playing comes back paused at the position it had reached when saved.
+ */
+export function configureRoomPersistence(cfg: { key: Buffer; path: string } | null): number {
+  hub.persist = cfg;
+  if (!cfg) return 0;
+  const value = readSealedFile(cfg.path, cfg.key, ROOMS_PURPOSE) as Snapshot | null | undefined;
+  if (value === undefined) return 0;
+  if (value === null || !Array.isArray(value.rooms)) {
+    console.warn("[rooms] saved rooms file could not be decrypted (key changed or file damaged); starting fresh");
+    return 0;
+  }
+  const now = Date.now();
+  let restored = 0;
+  for (const saved of value.rooms) {
+    if (!saved?.id || saved.expiresAt <= now || hub.rooms.has(saved.id)) continue;
+    const a = saved.playback;
+    const playback: PlaybackAnchor =
+      a.status === "playing"
+        ? {
+            status: "paused",
+            positionMs: expectedPositionMs(a, value.savedAt),
+            anchorServerTime: now,
+            by: null,
+            seq: a.seq + 1,
+          }
+        : a;
+    const participants = new Map<string, Participant>();
+    for (const p of saved.participants) {
+      participants.set(p.id, { ...newParticipant(p.name, p.role), ...p });
+    }
+    hub.rooms.set(saved.id, {
+      ...saved,
+      participants,
+      playback,
+      waitingFor: new Set(),
+      autoPauseSeq: null,
+    });
+    restored++;
+  }
+  for (const [secret, seat] of value.guests ?? []) if (hub.rooms.has(seat.roomId)) hub.guests.set(secret, seat);
+  return restored;
+}
 
 /** "7K2QXD"-style label from the id. Display only. */
 function roomCode(id: string): string {
@@ -213,6 +324,7 @@ export function createRoom(opts: {
     expiresAt: now + ROOM_TTL_MS,
   };
   hub.rooms.set(id, room);
+  markDirty();
   return { ok: true, room };
 }
 
@@ -231,6 +343,7 @@ export function joinRoom(roomId: string, name: string, previousSecret?: string):
   room.participants.set(participant.id, participant);
   const secret = randomToken(32);
   hub.guests.set(secret, { roomId, participantId: participant.id });
+  markDirty();
   broadcast(room);
   return { ok: true, participant, secret };
 }
@@ -244,6 +357,7 @@ export function leaveRoom(roomId: string, participantId: string): void {
   for (const c of hub.sockets.get(roomId) ?? []) {
     if (c.participantId === participantId) c.close(4010, "left");
   }
+  markDirty();
   broadcast(room);
 }
 
@@ -252,6 +366,7 @@ export function setReady(roomId: string, participantId: string, ready: boolean):
   const p = room?.participants.get(participantId);
   if (!room || !p || p.ready === ready) return;
   p.ready = ready;
+  markDirty();
   broadcast(room);
 }
 
@@ -376,6 +491,7 @@ export function setPermissions(roomId: string, byId: string, targetId: string, p
   for (const p of room.participants.values()) {
     if (p.role === "guest" && (targetId === "*" || p.id === targetId)) p.permissions = { ...permissions };
   }
+  markDirty();
   broadcast(room);
   return true;
 }
@@ -407,6 +523,7 @@ export function updateStatus(
 }
 
 function broadcastPlayback(room: Room): void {
+  markDirty();
   for (const c of hub.sockets.get(room.id) ?? []) c.send({ type: "playback", playback: room.playback });
 }
 
@@ -425,6 +542,7 @@ export function endRoom(roomId: string, reason: "host-ended" | "expired" | "repl
   clearTimeout(room.broadcastTimer);
   clearTimeout(room.bufferTimer);
   hub.rooms.delete(roomId);
+  markDirty();
   for (const [secret, seat] of hub.guests) if (seat.roomId === roomId) hub.guests.delete(secret);
   const sockets = hub.sockets.get(roomId);
   hub.sockets.delete(roomId);
@@ -453,7 +571,17 @@ export function detachSocket(roomId: string, conn: RoomConnection): void {
   if (!set?.delete(conn)) return;
   if (set.size === 0) hub.sockets.delete(roomId);
   const room = hub.rooms.get(roomId);
-  if (room) broadcast(room);
+  if (!room) return;
+  const p = room.participants.get(conn.participantId);
+  if (p && !isConnected(roomId, p.id)) {
+    // Gone: don't hold the room for them. They catch up when they reconnect.
+    p.playerReady = false;
+    p.buffering = false;
+    p.bufferingSince = null;
+    p.driftMs = null;
+    evaluateBuffering(room);
+  }
+  broadcast(room);
 }
 
 /** Sends each connection its own view of the room (their `you`). */
@@ -468,4 +596,7 @@ export function _resetRooms(): void {
   hub.rooms.clear();
   hub.guests.clear();
   hub.sockets.clear();
+  hub.persist = null;
+  if (hub.saveTimer) clearTimeout(hub.saveTimer);
+  hub.saveTimer = null;
 }

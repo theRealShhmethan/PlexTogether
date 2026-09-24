@@ -22,6 +22,25 @@ const INITIAL_RESTART_MS = 4000;
 /** Paused and ahead of the room by at most this → wait for the room rather than seek back. */
 const HOLD_MAX_MS = 10_000;
 
+/** Remembers (per browser) that this room's video was loaded, so a reload or reopened link resumes it. */
+const autoloadKey = (roomId: string) => `pt_autoload:${roomId}`;
+function readAutoload(roomId: string): boolean {
+  try {
+    return window.localStorage.getItem(autoloadKey(roomId)) === "1";
+  } catch {
+    return false;
+  }
+}
+function writeAutoload(roomId: string, on: boolean) {
+  try {
+    if (on) window.localStorage.setItem(autoloadKey(roomId), "1");
+    else window.localStorage.removeItem(autoloadKey(roomId));
+  } catch {
+    /* storage unavailable (private mode etc.): the user just clicks "Get ready" again */
+  }
+}
+export const forgetAutoload = (roomId: string) => writeAutoload(roomId, false);
+
 type Props = {
   roomId: string;
   me: string;
@@ -75,6 +94,22 @@ export function RoomPlayer(props: Props) {
   const holdTimer = useRef<number | undefined>(undefined);
   const restartMsRef = useRef(INITIAL_RESTART_MS);
   const lastRepositionAt = useRef(-Infinity);
+  const [needsUnmute, setNeedsUnmute] = useState(false);
+
+  /**
+   * play(), falling back to muted playback if the browser blocks autoplay with
+   * sound (e.g. after a reload with no click yet). The user can then unmute.
+   */
+  function safePlay(v: HTMLVideoElement | null) {
+    if (!v) return;
+    v.play().catch((err: unknown) => {
+      if (err instanceof DOMException && err.name === "NotAllowedError" && !v.muted) {
+        v.muted = true;
+        setNeedsUnmute(true);
+        void v.play().catch(() => {});
+      }
+    });
+  }
 
   const loaded = phase.kind === "loaded";
   const playerReady = loaded && canPlay;
@@ -167,13 +202,13 @@ export function RoomPlayer(props: Props) {
           if (ahead < SYNC_LOOP_MS * 2 && holdTimer.current === undefined) {
             holdTimer.current = window.setTimeout(() => {
               holdTimer.current = undefined;
-              void videoRef.current?.play().catch(() => {});
+              safePlay(videoRef.current);
             }, ahead);
           }
           return;
         }
         // Within tolerance (or we can't reposition yet): just play.
-        if (ahead > -DRIFT.hardSeekMs || !maybeReposition(expected, true)) void v.play().catch(() => {});
+        if (ahead > -DRIFT.hardSeekMs || !maybeReposition(expected, true)) safePlay(v);
         return;
       }
 
@@ -248,7 +283,7 @@ export function RoomPlayer(props: Props) {
     const v = videoRef.current;
     if (!v || !canPlayPause) return;
     if (v.paused) {
-      void v.play().catch(() => {});
+      safePlay(v);
       control("play");
     } else {
       v.pause();
@@ -267,7 +302,7 @@ export function RoomPlayer(props: Props) {
     await reposition(ms);
     setBusy(null);
     if (wasPlaying && canPlayPause) {
-      void videoRef.current?.play().catch(() => {});
+      safePlay(videoRef.current);
       control("play");
     }
   }
@@ -278,8 +313,20 @@ export function RoomPlayer(props: Props) {
     const now = serverNow();
     // If the room is already playing, load a little ahead and let the hold logic start us on time.
     const at = expectedPositionMs(a, now) + (a.status === "playing" && now >= a.anchorServerTime ? INITIAL_RESTART_MS : 0);
-    if (await load(at)) send({ type: "ready", ready: true });
+    if (await load(at)) {
+      send({ type: "ready", ready: true });
+      writeAutoload(roomId, true);
+    }
   }
+
+  // After a reload or reopened link, reload the video automatically once connected.
+  const autoloadTried = useRef(false);
+  useEffect(() => {
+    if (autoloadTried.current || !connected || phase.kind !== "idle" || !readAutoload(roomId)) return;
+    autoloadTried.current = true;
+    void getReady();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once when the socket first connects
+  }, [connected, phase.kind, roomId]);
 
   function startTogether() {
     send({ type: "start", positionMs: Math.round(mediaTimeMs()) });
@@ -318,6 +365,19 @@ export function RoomPlayer(props: Props) {
           busyLabel={busy}
         />
       </div>
+
+      {needsUnmute && (
+        <button
+          className="button unmute"
+          onClick={() => {
+            const v = videoRef.current;
+            if (v) v.muted = false;
+            setNeedsUnmute(false);
+          }}
+        >
+          🔇 Playing muted (your browser blocked sound) — click to turn sound on
+        </button>
+      )}
 
       {phase.kind === "idle" && (
         <div className="row">

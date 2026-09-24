@@ -7,7 +7,7 @@ import { postJson } from "@/lib/client/api";
 import type { PublicParticipant, PublicRoom } from "@/lib/rooms/protocol";
 import { driftLabel } from "@/lib/sync/drift";
 import { PermissionsPanel } from "./PermissionsPanel";
-import { RoomPlayer } from "./RoomPlayer";
+import { forgetAutoload, RoomPlayer } from "./RoomPlayer";
 import { useRoomSocket, type SocketStatus } from "./useRoomSocket";
 
 const ENDED_TEXT: Record<string, string> = {
@@ -88,6 +88,7 @@ export function RoomView({
   async function endOrLeave() {
     if (isHost && !window.confirm("End the watch party for everyone?")) return;
     setBusy(true);
+    forgetAutoload(room.id);
     await postJson(`/api/rooms/${room.id}/${isHost ? "end" : "leave"}`, {});
     setBusy(false);
     router.push(isHost ? "/browse" : "/");
