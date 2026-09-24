@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getJson } from "@/lib/client/api";
 import type { LibraryItem } from "@/lib/plex/library";
-import { itemSubtitle } from "./PosterGrid";
+import { itemSubtitle } from "@/lib/format/item";
 
 type Detail = { item: LibraryItem; episodes: LibraryItem[] | null };
 type State = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; detail: Detail };

@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getJson, postJson } from "@/lib/client/api";
 import type { ItemPage, LibraryItem, LibrarySection } from "@/lib/plex/library";
 import { ItemDetail } from "./ItemDetail";
-import { itemSubtitle, PosterGrid } from "./PosterGrid";
+import { itemSubtitle } from "@/lib/format/item";
+import { PosterGrid } from "./PosterGrid";
 
 type Listing =
   | { kind: "loading" }
@@ -133,6 +135,11 @@ export function LibraryBrowser() {
           <p>
             <strong>{selected.title}</strong> <span className="muted">{itemSubtitle(selected)}</span>
           </p>
+        ) : null}
+        {selected ? (
+          <Link className="button" href="/watch">
+            ▶ Play
+          </Link>
         ) : (
           <p className="muted">Nothing selected yet. Open a movie or episode and choose “Select for watch party”.</p>
         )}

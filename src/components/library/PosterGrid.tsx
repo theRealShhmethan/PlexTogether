@@ -1,16 +1,7 @@
 "use client";
 
+import { itemSubtitle } from "@/lib/format/item";
 import type { LibraryItem } from "@/lib/plex/library";
-
-export function itemSubtitle(item: LibraryItem): string {
-  if (item.type === "episode") {
-    const se =
-      item.seasonNumber !== null && item.episodeNumber !== null ? `S${item.seasonNumber} · E${item.episodeNumber}` : "";
-    return [item.showTitle, se].filter(Boolean).join(" · ");
-  }
-  if (item.type === "show") return item.episodeCount !== null ? `${item.episodeCount} episodes` : "TV show";
-  return item.year !== null ? String(item.year) : "";
-}
 
 /** Tiles lead with the show name for episodes ("House M.D." / "S3 · E5 · Title"). */
 function tileText(item: LibraryItem): { title: string; sub: string } {

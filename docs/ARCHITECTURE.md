@@ -163,16 +163,23 @@ Plex Home. It adds nothing over A.
 in Phase 6. Treat **B** as a separate, security-reviewed milestone, only if a guest account
 turns out to be a real blocker. **Decision needed from the project owner before Phase 6.**
 
-## 5. Host playback (Phase 5, planned)
+## 5. Host playback (Phase 5, proof of concept)
 
 The host's own browser has to hold a PMS token to play (it goes in the media URLs). Rather than the
 long-lived server `accessToken`, we plan to give the host's browser a **transient token**
 (`POST /security/token`, max 48 h, dies on PMS restart). It has the same access, but a leak
 expires on its own. (Plex Web likewise holds a server token in the browser.) It is scoped to that one server and is only given to
 the host's authenticated session. It's never stored in `localStorage` and never sent over the
-sync WebSocket. We'll use `/video/:/transcode/universal/decision` + `start.m3u8` (HLS; Chrome
-needs hls.js, Safari is native) with a direct-play fallback for browser-compatible files, and
-report progress via `/:/timeline`. We'll prefer `local`/HTTPS connections from `/resources`
+sync WebSocket. **As built:** the server calls `/video/:/transcode/universal/decision` and then hands the player the
+`start.m3u8` URL (no token in it) plus a transient token. The player (hls.js) adds that token only to
+requests for the Plex server's own origin (`withToken`). We always request HLS with direct
+stream allowed. Compatible video and audio are copied (remuxed), and anything else is transcoded to
+H.264/AAC (Generic profile plus an `add-transcode-target` augmentation). Subtitles are burned in for
+now. True direct play of the original file isn't used yet. The player's time equals media time
+(resume uses hls.js `startPosition`, not Plex's `offset`), which Phase 7 sync relies on. Progress
+goes to `/:/timeline` via our server every 10 s and on every state change, which updates Plex's
+resume point and watched status. Only the watch-party pick can be started, and only the current
+session can report. We'll prefer `local`/HTTPS connections from `/resources`
 and use `relay` only as a last resort.
 
 ## 6. Rooms & sync (Phases 6–8, planned)

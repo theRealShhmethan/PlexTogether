@@ -44,6 +44,8 @@ export type HostSession = {
   selectedServer?: SelectedServer;
   /** Movie/episode picked for the watch party (on selectedServer). */
   selectedItem?: LibraryItem;
+  /** The host's current Plex playback session, if any. */
+  playback?: { sessionId: string; ratingKey: string; durationMs: number | null; startedAt: number };
 };
 
 /**

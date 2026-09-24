@@ -352,3 +352,23 @@ a {
 .row .button {
   align-self: center;
 }
+
+/* ---------- player ---------- */
+
+.player {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 8px;
+}
+
+a.button {
+  text-decoration: none;
+  display: inline-block;
+}
