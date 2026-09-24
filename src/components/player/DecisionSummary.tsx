@@ -19,7 +19,8 @@ function line(s: StreamDecision): string {
 export function DecisionSummary({ decision, location }: { decision: PlaybackDecision; location: "lan" | "wan" }) {
   const shown = decision.streams.filter((s) => s.decision && s.decision !== "ignore" && s.decision !== "none");
   return (
-    <div className="status ok small">
+    <details className="stream-info status small">
+      <summary>Stream info</summary>
       <strong>
         {decision.partDecision === "transcode" || shown.some((s) => s.decision === "transcode")
           ? "Plex is transcoding"
@@ -36,6 +37,6 @@ export function DecisionSummary({ decision, location }: { decision: PlaybackDeci
           <li key={`r${i}`}>Plex says: {r}</li>
         ))}
       </ul>
-    </div>
+    </details>
   );
 }

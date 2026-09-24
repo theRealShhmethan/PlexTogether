@@ -141,26 +141,24 @@ export function LibraryBrowser() {
 
   return (
     <>
-      <section className="panel">
-        <h2>Watch party pick</h2>
+      <section className="pick-bar">
         {selected ? (
-          <p>
-            <strong>{selected.title}</strong> <span className="muted">{itemSubtitle(selected)}</span>
-          </p>
-        ) : null}
-        {selected ? (
-          <div className="row">
+          <>
+            <div className="pick-title">
+              <div className="muted small">Tonight&apos;s pick</div>
+              <strong>{selected.title}</strong> <span className="muted">{itemSubtitle(selected)}</span>
+            </div>
             <button className="button" onClick={() => void createParty()} disabled={creating}>
               {creating ? "Creating…" : "Create watch party"}
             </button>
             <Link className="button secondary" href="/watch">
-              ▶ Play just for me
+              ▶ Watch alone
             </Link>
-          </div>
+          </>
         ) : (
-          <p className="muted">Nothing selected yet. Open a movie or episode and choose “Select for watch party”.</p>
+          <span className="muted">Open a movie or episode and choose “Select for watch party”.</span>
         )}
-        {pickError && <p className="error">{pickError}</p>}
+        {pickError && <p className="error small">{pickError}</p>}
       </section>
 
       <section className="panel">

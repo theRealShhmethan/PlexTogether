@@ -29,7 +29,7 @@ export default async function RoomPage(props: PageProps<"/r/[roomId]">) {
   const viewerId = isHost ? room.hostParticipantId : guest?.room.id === room.id ? guest.participant.id : null;
 
   return (
-    <div className="wide narrow">
+    <div className={viewerId ? "wide" : "wide narrow"}>
       {viewerId ? (
         <RoomView
           initial={publicRoom(room, viewerId)}

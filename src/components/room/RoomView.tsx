@@ -17,7 +17,8 @@ const ENDED_TEXT: Record<string, string> = {
 };
 
 function StatusLine({ status, rttMs }: { status: SocketStatus; rttMs: number | null }) {
-  if (status === "open") return <span className="muted small">● Connected{rttMs !== null ? ` · ${rttMs} ms` : ""}</span>;
+  if (status === "open")
+    return <span className="muted small">● Connected{rttMs !== null ? ` · ${rttMs} ms` : ""}</span>;
   if (status === "connecting") return <span className="muted small">Connecting…</span>;
   if (status === "reconnecting") return <span className="error small">Connection lost — reconnecting…</span>;
   return null;
@@ -26,20 +27,17 @@ function StatusLine({ status, rttMs }: { status: SocketStatus; rttMs: number | n
 function SyncCell({ p, room }: { p: PublicParticipant; room: PublicRoom }) {
   if (!p.playerReady) return <span className="muted small">{p.connected ? "no video yet" : ""}</span>;
   if (p.buffering) return <span className="error small">buffering…</span>;
-  if (room.playback.by === p.id && room.playback.status !== "idle") return <span className="muted small">setting the pace</span>;
+  if (room.playback.by === p.id && room.playback.status !== "idle")
+    return <span className="muted small">setting the pace</span>;
   if (room.playback.status !== "playing") return <span className="muted small">video loaded</span>;
-  return <span className={p.driftMs !== null && Math.abs(p.driftMs) < 250 ? "sync ok small" : "sync small"}>{driftLabel(p.driftMs)}</span>;
+  return (
+    <span className={p.driftMs !== null && Math.abs(p.driftMs) < 250 ? "sync ok small" : "sync small"}>
+      {driftLabel(p.driftMs)}
+    </span>
+  );
 }
 
-export function RoomView({
-  initial,
-  isHost,
-  inviteUrl,
-}: {
-  initial: PublicRoom;
-  isHost: boolean;
-  inviteUrl: string;
-}) {
+export function RoomView({ initial, isHost, inviteUrl }: { initial: PublicRoom; isHost: boolean; inviteUrl: string }) {
   const router = useRouter();
   const { room, status, endedReason, rttMs, send, serverNow } = useRoomSocket(initial.id, initial);
   const [copied, setCopied] = useState(false);
@@ -95,87 +93,91 @@ export function RoomView({
   }
 
   return (
-    <>
-      <section className="panel">
-        <div className="page-header">
-          <h2>Room {room.code}</h2>
-          <StatusLine status={status} rttMs={rttMs} />
-        </div>
-        <p>
-          <strong>{room.title}</strong>
-        </p>
+    <div className="room-layout">
+      <div className="room-main">
+        <section className="panel">
+          <RoomPlayer
+            roomId={room.id}
+            me={room.you}
+            isHost={isHost}
+            permissions={me?.permissions ?? { playPause: false, seek: false }}
+            playback={room.playback}
+            durationMs={room.durationMs}
+            waitingFor={room.waitingFor}
+            nameOf={(id) => room.participants.find((p) => p.id === id)?.name ?? null}
+            serverNow={serverNow}
+            rttMs={rttMs}
+            send={send}
+            connected={status === "open"}
+            canStart={everyoneReady}
+            startHint={startHint}
+          />
+        </section>
+      </div>
 
-        {isHost && (
-          <div className="invite">
-            <label className="muted small" htmlFor="invite">
-              Invite link — anyone with it can join until you end the room
-            </label>
-            <div className="row">
-              <input id="invite" readOnly value={inviteUrl} onFocus={(e) => e.currentTarget.select()} />
-              <button className="button" onClick={() => void copyInvite()}>
-                {copied ? "Copied" : "Copy"}
-              </button>
+      <aside className="room-side">
+        <section className="panel">
+          <div className="page-header">
+            <div className="room-title">
+              <strong>{room.title}</strong>
+              <span className="room-code">ROOM {room.code}</span>
             </div>
+            <StatusLine status={status} rttMs={rttMs} />
           </div>
-        )}
-      </section>
 
-      <section className="panel">
-        <RoomPlayer
-          roomId={room.id}
-          me={room.you}
-          isHost={isHost}
-          permissions={me?.permissions ?? { playPause: false, seek: false }}
-          playback={room.playback}
-          durationMs={room.durationMs}
-          waitingFor={room.waitingFor}
-          nameOf={(id) => room.participants.find((p) => p.id === id)?.name ?? null}
-          serverNow={serverNow}
-          rttMs={rttMs}
-          send={send}
-          connected={status === "open"}
-          canStart={everyoneReady}
-          startHint={startHint}
-        />
-      </section>
+          {isHost && (
+            <div className="invite">
+              <label className="muted small" htmlFor="invite">
+                Invite link — send it to your guest. Anyone with it can join until you end the room.
+              </label>
+              <div className="row">
+                <input id="invite" readOnly value={inviteUrl} onFocus={(e) => e.currentTarget.select()} />
+                <button className="button" onClick={() => void copyInvite()}>
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
 
-      <section className="panel">
-        <h2>Who&apos;s here</h2>
-        <ul className="participants">
-          {room.participants.map((p) => (
-            <li key={p.id}>
-              <span className={p.connected ? "dot on" : "dot"} title={p.connected ? "Connected" : "Not connected"} />
-              <span className="name">
-                {p.name}
-                {p.id === room.you && <span className="muted"> (you)</span>}
-                {p.role === "host" && <span className="badge">host</span>}
-              </span>
-              <SyncCell p={p} room={room} />
-              <span className={p.ready ? "ready yes" : "ready"}>{p.ready ? "Ready" : "Not ready"}</span>
-            </li>
-          ))}
-        </ul>
+        <section className="panel">
+          <h2>Who&apos;s here</h2>
+          <ul className="participants">
+            {room.participants.map((p) => (
+              <li key={p.id}>
+                <span className={p.connected ? "dot on" : "dot"} title={p.connected ? "Connected" : "Not connected"} />
+                <span className="name">
+                  {p.name}
+                  {p.id === room.you && <span className="muted"> (you)</span>}
+                  {p.role === "host" && <span className="badge">host</span>}
+                </span>
+                <SyncCell p={p} room={room} />
+                <span className={p.ready ? "ready yes" : "ready"}>{p.ready ? "Ready" : "Not ready"}</span>
+              </li>
+            ))}
+          </ul>
+
+          <div className="row">
+            <button
+              className={me?.ready ? "button secondary" : "button"}
+              onClick={() => send({ type: "ready", ready: !me?.ready })}
+              disabled={status !== "open"}
+            >
+              {me?.ready ? "I'm not ready" : "I'm ready"}
+            </button>
+          </div>
+          <p className="muted small">{startHint} Loading the video marks you ready.</p>
+        </section>
+
+        {isHost && <PermissionsPanel room={room} send={send} disabled={status !== "open"} />}
 
         <div className="row">
-          <button
-            className={me?.ready ? "button secondary" : "button"}
-            onClick={() => send({ type: "ready", ready: !me?.ready })}
-            disabled={status !== "open"}
-          >
-            {me?.ready ? "I'm not ready" : "I'm ready"}
+          <button className="button secondary" onClick={() => void endOrLeave()} disabled={busy}>
+            {isHost ? "End watch party" : "Leave"}
           </button>
+          <span className="muted small">Room expires {new Date(room.expiresAt).toLocaleTimeString()}</span>
         </div>
-        <p className="muted small">{startHint} Loading the video marks you ready.</p>
-      </section>
-
-      {isHost && <PermissionsPanel room={room} send={send} disabled={status !== "open"} />}
-
-      <div className="row">
-        <button className="button secondary" onClick={() => void endOrLeave()} disabled={busy}>
-          {isHost ? "End watch party" : "Leave"}
-        </button>
-        <span className="muted small">Room expires {new Date(room.expiresAt).toLocaleTimeString()}</span>
-      </div>
-    </>
+      </aside>
+    </div>
   );
 }

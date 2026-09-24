@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import type { PublicConnection, PublicProbe, PublicSelection, PublicServer } from "@/lib/servers/service";
 
@@ -53,6 +54,7 @@ async function fetchServerList(): Promise<LoadResult> {
 }
 
 export function ServerPicker() {
+  const router = useRouter();
   const [list, setList] = useState<ListState>({ kind: "loading" });
   const [selected, setSelected] = useState<PublicSelection | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -97,6 +99,7 @@ export function ServerPicker() {
       const body = (await res.json()) as { selected: PublicSelection; probes: PublicProbe[] };
       setSelected(body.selected);
       setLastProbes(body.probes);
+      router.refresh(); // update server-rendered bits (e.g. the home page's "Start" card)
     } catch {
       setSelectError({ message: "Network error while checking the server.", probes: [] });
     } finally {
@@ -106,7 +109,7 @@ export function ServerPicker() {
 
   return (
     <section className="panel">
-      <h2>Plex Media Server</h2>
+      <h2>Plex server</h2>
 
       {selected && (
         <div className="status ok">
