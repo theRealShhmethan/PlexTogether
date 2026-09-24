@@ -182,7 +182,17 @@ resume point and watched status. Only the watch-party pick can be started, and o
 session can report. We'll prefer `local`/HTTPS connections from `/resources`
 and use `relay` only as a last resort.
 
-## 6. Rooms & sync (Phases 6–8, planned)
+## 6. Rooms & sync (Phase 6 built; 7–8 planned)
+
+**Phase 6 as built:**
+- **Invite link:** the room id is 16 random bytes, and it *is* the invite link (`/r/<id>`). A 6-character code is shown for humans only.
+- **Guests:** a guest joins with a display name and gets `pt_guest`, a random 256-bit seat secret in an HttpOnly cookie. It only resolves while the room and seat exist.
+- **Host:** recognised by their session cookie.
+- **Sockets:** `/ws/rooms/<id>` rejects any `Origin` other than `APP_URL` (browsers send cookies on cross-site WebSocket upgrades). Messages are limited to 4 KB and schema-validated, and dead connections are dropped by a 30 s heartbeat.
+- **Limits:** one room per host, 8 participants, and a 6 h expiry. Ending or expiring a room closes every socket and invalidates every seat.
+- **What rooms carry:** no Plex token ever goes into a room or a socket message.
+
+**Planned for Phases 7–8:**
 
 - Room ids / invite tokens: 128+ bits from `crypto.randomBytes`, unguessable. Rooms are in memory
   and expire (e.g. 6 h, or when the host ends them).

@@ -372,3 +372,69 @@ a.button {
   text-decoration: none;
   display: inline-block;
 }
+
+/* ---------- rooms ---------- */
+
+.wide.narrow {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.invite {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.invite input,
+.panel form.row input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.participants {
+  list-style: none;
+}
+
+.participants li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.participants .name {
+  flex: 1;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.dot.on {
+  background: #4caf6a;
+}
+
+.badge {
+  margin-left: 8px;
+  font-size: 0.75rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+.ready {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.ready.yes {
+  color: #4caf6a;
+  font-weight: 600;
+}

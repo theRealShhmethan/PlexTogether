@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getJson, postJson } from "@/lib/client/api";
 import type { ItemPage, LibraryItem, LibrarySection } from "@/lib/plex/library";
@@ -41,6 +42,8 @@ export function LibraryBrowser() {
   const [selected, setSelected] = useState<LibraryItem | null>(null);
   const [picking, setPicking] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     let cancelled = false;
@@ -112,6 +115,15 @@ export function LibraryBrowser() {
     setListing(await fetchContinueWatching());
   }
 
+  async function createParty() {
+    setCreating(true);
+    setPickError(null);
+    const r = await postJson<{ roomId: string }>("/api/rooms", {});
+    setCreating(false);
+    if (r.ok) router.push(`/r/${r.data.roomId}`);
+    else setPickError(r.error);
+  }
+
   async function pick(item: LibraryItem) {
     setPicking(true);
     setPickError(null);
@@ -137,9 +149,14 @@ export function LibraryBrowser() {
           </p>
         ) : null}
         {selected ? (
-          <Link className="button" href="/watch">
-            ▶ Play
-          </Link>
+          <div className="row">
+            <button className="button" onClick={() => void createParty()} disabled={creating}>
+              {creating ? "Creating…" : "Create watch party"}
+            </button>
+            <Link className="button secondary" href="/watch">
+              ▶ Play just for me
+            </Link>
+          </div>
         ) : (
           <p className="muted">Nothing selected yet. Open a movie or episode and choose “Select for watch party”.</p>
         )}

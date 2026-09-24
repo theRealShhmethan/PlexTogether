@@ -13,7 +13,7 @@ media; PlexTogether handles rooms and synchronization.
 | 3 | Server discovery + connectivity check | ✅ done — verified against a real PMS (Synology, 1.42.1) |
 | 4 | Library browsing, Continue Watching, search, pick an item; Plex Home profile switching | ✅ done — verified against a real PMS |
 | 5 | Playback proof of concept (host, HLS via Plex's transcoder, progress saved to Plex) | ✅ implemented, **needs a real-server test** |
-| 6 | Rooms / invites | ⏳ blocked on a guest-access decision (see below) |
+| 6 | Rooms: invite link, join with a name, participants, ready, end, expiry | ✅ implemented, **needs a two-browser test**. How guests get *video* is still undecided (see below) |
 | 7 | Playback sync | ⏳ not started |
 | 8 | Buffering / reconnect | ⏳ not started |
 
@@ -34,7 +34,7 @@ Watch Pass on the viewer's account, for remote video playback.
 - **Next.js 16 (App Router) + TypeScript**, one Node process.
 - Server-side Plex client in `src/lib/plex/` (auth, headers, response validation).
 - In-memory session store in `src/lib/session/`. There's no database yet.
-- Planned: a `ws` WebSocket server on the same process for rooms and sync.
+- `server.ts`: a custom Node server (run with `tsx`) that serves Next.js **and** the room WebSockets (`/ws/rooms/<id>`, via `ws`) on one port. Next.js route handlers can't hold WebSockets. Room state is in memory (`src/lib/rooms/hub.ts`).
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full plan.
 
@@ -55,8 +55,8 @@ Open **exactly** the URL in `APP_URL` (default `http://localhost:3000`, not
 
 | Script | What it does |
 | --- | --- |
-| `npm run dev` | dev server |
-| `npm run build` / `npm start` | production build / serve |
+| `npm run dev` | dev server (Next.js + room WebSockets; restarts when `server.ts` or room code changes) |
+| `npm run build`, then `npm start` | production build, then serve |
 | `npm run typecheck` | generates Next route types, then runs `tsc` |
 | `npm run lint` | ESLint |
 | `npm test` | Vitest unit tests |
@@ -99,7 +99,7 @@ Target: host on Chrome/Edge (Windows), guest on Chrome (macOS). Safari is desira
 - Sign-in, server selection and library browsing only. No playback, rooms, or sync yet.
 - Posters are fetched through PlexTogether (`/api/plex/image`, allowlisted Plex image paths only) so the server token never reaches the browser.
 - Connectivity is checked from the PlexTogether server, not the browser. On localhost these are the same machine; once hosted elsewhere, Phase 5 will also need a browser-side check.
-- Single process only. JWT-mode sessions aren't saved across restarts.
+- Single process only. JWT-mode sessions aren't saved across restarts. Rooms are memory-only, so a restart ends them.
 - Remote guests need the app served over HTTPS at a public URL. Localhost only works for testing on your own machine.
 
 ## Roadmap

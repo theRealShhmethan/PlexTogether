@@ -3,8 +3,7 @@ import { cookies } from "next/headers";
 import { getConfig } from "@/lib/config";
 import type { PlexAuthMode } from "@/lib/plex/auth";
 
-export const COOKIE_SESSION = "pt_session";
-export const COOKIE_PENDING = "pt_login";
+export { COOKIE_GUEST, COOKIE_PENDING, COOKIE_SESSION } from "./cookieNames";
 /**
  * Stable, non-secret Plex client identifier for this browser, one per auth
  * mode. PLEX QUIRK (observed 2026-09-23): after an identifier had been used
