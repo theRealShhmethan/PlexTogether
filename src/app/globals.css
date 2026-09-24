@@ -308,3 +308,16 @@ a {
   padding: 6px 12px;
   font-size: 0.9rem;
 }
+
+.progress {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}

@@ -5,7 +5,7 @@ import { pmsGet, type Page, type PmsTarget } from "./pms";
  * Library browsing, using endpoints from the official PMS API spec
  * (https://developer.plex.tv/pms/): /library/sections/all,
  * /library/sections/{id}/all, /library/metadata/{id},
- * /library/metadata/{id}/allLeaves and /hubs/search.
+ * /library/metadata/{id}/allLeaves, /hubs/search and /hubs/continueWatching.
  *
  * Only movie and TV libraries are exposed; music/photo are out of scope.
  */
@@ -28,6 +28,8 @@ const MetadataSchema = z.object({
   year: z.number().int().optional(),
   summary: z.string().optional(),
   duration: z.number().optional(),
+  // Resume position (ms) for the signed-in account.
+  viewOffset: z.number().optional(),
   thumb: z.string().optional(),
   art: z.string().optional(),
   contentRating: z.string().optional(),
@@ -59,7 +61,7 @@ const SectionsSchema = z.object({
   }),
 });
 
-const SearchSchema = z.object({
+const HubsSchema = z.object({
   MediaContainer: z.object({
     Hub: z.array(z.object({ type: z.string(), Metadata: z.array(z.unknown()).default([]) }).loose()).default([]),
   }),
@@ -76,6 +78,8 @@ export type LibraryItem = {
   year: number | null;
   summary: string | null;
   durationMs: number | null;
+  /** Where the signed-in account left off, if partly watched. */
+  viewOffsetMs: number | null;
   contentRating: string | null;
   /** Same-origin proxy URL, or null. */
   poster: string | null;
@@ -118,9 +122,11 @@ function toItem(m: RawMetadata): LibraryItem | null {
     year: m.year ?? null,
     summary: m.summary || null,
     durationMs: m.duration ?? null,
+    viewOffsetMs: m.viewOffset ?? null,
     contentRating: m.contentRating ?? null,
+    // Episodes use the show's poster: episode stills are 16:9 and crop badly into poster tiles.
     poster: isEpisode
-      ? imageProxyUrl(m.thumb, 400, 225) ?? imageProxyUrl(m.grandparentThumb, 300, 450)
+      ? (imageProxyUrl(m.grandparentThumb, 300, 450) ?? imageProxyUrl(m.thumb, 300, 450))
       : imageProxyUrl(m.thumb, 300, 450),
     showTitle: isEpisode ? (m.grandparentTitle ?? null) : null,
     showRatingKey: isEpisode ? (m.grandparentRatingKey ?? null) : null,
@@ -163,7 +169,25 @@ export async function listEpisodes(target: PmsTarget, showRatingKey: string): Pr
 }
 
 export async function search(target: PmsTarget, query: string): Promise<LibraryItem[]> {
-  const res = await pmsGet(target, "search", "/hubs/search", SearchSchema, { query: { query, limit: "20" } });
+  const res = await pmsGet(target, "search", "/hubs/search", HubsSchema, { query: { query, limit: "20" } });
   const hubs = res.MediaContainer.Hub.filter((h) => h.type === "movie" || h.type === "show" || h.type === "episode");
   return hubs.flatMap((h) => toItems(h.Metadata));
+}
+
+/**
+ * Plex's own "Continue Watching" row for the signed-in account: partly
+ * watched movies/episodes and the next episode of shows in progress.
+ * PLEX NOTE: watch state is per Plex account, so this reflects whoever
+ * signed in to PlexTogether.
+ */
+export async function continueWatching(target: PmsTarget): Promise<LibraryItem[]> {
+  const res = await pmsGet(target, "continue-watching", "/hubs/continueWatching", HubsSchema, {
+    query: { count: "30" },
+  });
+  const seen = new Set<string>();
+  return res.MediaContainer.Hub.flatMap((h) => toItems(h.Metadata)).filter((i) => {
+    if (i.type === "show" || seen.has(i.ratingKey)) return false;
+    seen.add(i.ratingKey);
+    return true;
+  });
 }

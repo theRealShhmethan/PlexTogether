@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ImagePathSchema, imageProxyUrl, listEpisodes, listSectionItems, listSections, search } from "./library";
+import {
+  continueWatching,
+  ImagePathSchema,
+  imageProxyUrl,
+  listEpisodes,
+  listSectionItems,
+  listSections,
+  search,
+} from "./library";
 import type { PmsTarget } from "./pms";
 
 const target: PmsTarget = {
@@ -134,5 +142,41 @@ describe("listEpisodes / search", () => {
     });
     expect((await search(target, "a b")).map((i) => i.ratingKey)).toEqual(["1", "3"]);
     expect(calls(fn)[0][0]).toContain("/hubs/search?query=a+b&limit=20");
+  });
+});
+
+describe("continueWatching", () => {
+  it("returns in-progress and next-up items with resume position, without shows or duplicates", async () => {
+    const fn = mockFetch({
+      MediaContainer: {
+        Hub: [
+          {
+            type: "mixed",
+            Metadata: [
+              {
+                ratingKey: "70",
+                type: "episode",
+                title: "Three Stories",
+                grandparentTitle: "House M.D.",
+                grandparentThumb: "/library/metadata/60/thumb/5",
+                parentIndex: 1,
+                index: 21,
+                duration: 2_640_000,
+                viewOffset: 600_000,
+                Media: [{}],
+              },
+              { ratingKey: "70", type: "episode", title: "Three Stories", Media: [{}] },
+              { ratingKey: "60", type: "show", title: "House M.D." },
+            ],
+          },
+        ],
+      },
+    });
+    const items = await continueWatching(target);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ ratingKey: "70", showTitle: "House M.D.", viewOffsetMs: 600_000, playable: true });
+    // Episodes use the show's poster.
+    expect(items[0].poster).toContain(encodeURIComponent("/library/metadata/60/thumb/5"));
+    expect(calls(fn)[0][0]).toContain("/hubs/continueWatching?count=30");
   });
 });

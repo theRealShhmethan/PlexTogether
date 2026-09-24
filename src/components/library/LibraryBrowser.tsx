@@ -7,15 +7,32 @@ import { ItemDetail } from "./ItemDetail";
 import { itemSubtitle, PosterGrid } from "./PosterGrid";
 
 type Listing =
-  | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "error"; message: string }
-  | { kind: "ready"; title: string; items: LibraryItem[]; total: number | null; sectionId: string | null };
+  | {
+      kind: "ready";
+      /** Which tab is showing: "continue", "search", or a library id. */
+      view: string;
+      title: string;
+      items: LibraryItem[];
+      total: number | null;
+      /** Set for library listings, which can page. */
+      sectionId: string | null;
+    };
+
+const CONTINUE = "continue";
+
+async function fetchContinueWatching(): Promise<Listing> {
+  const r = await getJson<{ items: LibraryItem[] }>("/api/plex/continue");
+  return r.ok
+    ? { kind: "ready", view: CONTINUE, title: "Continue Watching", items: r.data.items, total: null, sectionId: null }
+    : { kind: "error", message: r.error };
+}
 
 export function LibraryBrowser() {
   const [libraries, setLibraries] = useState<LibrarySection[] | null>(null);
   const [librariesError, setLibrariesError] = useState<string | null>(null);
-  const [listing, setListing] = useState<Listing>({ kind: "idle" });
+  const [listing, setListing] = useState<Listing>({ kind: "loading" });
   const [loadingMore, setLoadingMore] = useState(false);
   const [query, setQuery] = useState("");
   const [openKey, setOpenKey] = useState<string | null>(null);
@@ -28,8 +45,10 @@ export function LibraryBrowser() {
     void Promise.all([
       getJson<{ libraries: LibrarySection[] }>("/api/plex/libraries"),
       getJson<{ item: LibraryItem | null }>("/api/plex/selection"),
-    ]).then(([libs, sel]) => {
+      fetchContinueWatching(),
+    ]).then(([libs, sel, cw]) => {
       if (cancelled) return;
+      setListing(cw);
       if (libs.ok) setLibraries(libs.data.libraries);
       else setLibrariesError(libs.error);
       if (sel.ok) setSelected(sel.data.item);
@@ -45,7 +64,7 @@ export function LibraryBrowser() {
     const r = await getJson<ItemPage>(`/api/plex/libraries/${lib.id}/items?start=0`);
     setListing(
       r.ok
-        ? { kind: "ready", title: lib.title, items: r.data.items, total: r.data.total, sectionId: lib.id }
+        ? { kind: "ready", view: lib.id, title: lib.title, items: r.data.items, total: r.data.total, sectionId: lib.id }
         : { kind: "error", message: r.error },
     );
   }
@@ -73,9 +92,22 @@ export function LibraryBrowser() {
     const r = await getJson<{ items: LibraryItem[] }>(`/api/plex/search?${new URLSearchParams({ q })}`);
     setListing(
       r.ok
-        ? { kind: "ready", title: `Results for “${q}”`, items: r.data.items, total: r.data.items.length, sectionId: null }
+        ? {
+            kind: "ready",
+            view: "search",
+            title: `Results for “${q}”`,
+            items: r.data.items,
+            total: r.data.items.length,
+            sectionId: null,
+          }
         : { kind: "error", message: r.error },
     );
+  }
+
+  async function openContinueWatching() {
+    setOpenKey(null);
+    setListing({ kind: "loading" });
+    setListing(await fetchContinueWatching());
   }
 
   async function pick(item: LibraryItem) {
@@ -125,11 +157,17 @@ export function LibraryBrowser() {
         {libraries === null && !librariesError && <p className="muted">Loading libraries…</p>}
         {libraries && (
           <div className="tabs">
+            <button
+              className={listing.kind === "ready" && listing.view === CONTINUE ? "tab active" : "tab"}
+              onClick={() => void openContinueWatching()}
+            >
+              Continue Watching
+            </button>
             {libraries.length === 0 && <span className="muted">No movie or TV libraries on this server.</span>}
             {libraries.map((lib) => (
               <button
                 key={lib.id}
-                className={listing.kind === "ready" && listing.sectionId === lib.id ? "tab active" : "tab"}
+                className={listing.kind === "ready" && listing.view === lib.id ? "tab active" : "tab"}
                 onClick={() => void openLibrary(lib)}
               >
                 {lib.title}
@@ -151,7 +189,6 @@ export function LibraryBrowser() {
         />
       ) : (
         <section className="panel">
-          {listing.kind === "idle" && <p className="muted">Pick a library or search.</p>}
           {listing.kind === "loading" && <p className="muted">Loading…</p>}
           {listing.kind === "error" && <p className="error">{listing.message}</p>}
           {listing.kind === "ready" && (
@@ -161,7 +198,11 @@ export function LibraryBrowser() {
                 {listing.total !== null && <span className="muted small"> · {listing.total}</span>}
               </h2>
               {listing.items.length === 0 ? (
-                <p className="muted">Nothing here.</p>
+                <p className="muted">
+                  {listing.view === CONTINUE
+                    ? "Nothing in progress for this Plex account. Pick a library to browse."
+                    : "Nothing here."}
+                </p>
               ) : (
                 <PosterGrid items={listing.items} onOpen={(item) => setOpenKey(item.ratingKey)} />
               )}
