@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-export function SignInButton() {
+export function SignInButton({ returnTo = "/" }: { returnTo?: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -10,7 +10,11 @@ export function SignInButton() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/auth/plex/start", { method: "POST" });
+      const res = await fetch("/api/auth/plex/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ returnTo }),
+      });
       const body = (await res.json()) as { authUrl?: string; error?: string };
       if (!res.ok || !body.authUrl) throw new Error(body.error ?? `Sign-in failed (HTTP ${res.status})`);
       // Full-page redirect to app.plex.tv; Plex sends us back to /auth/callback.

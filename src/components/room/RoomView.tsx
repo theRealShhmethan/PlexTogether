@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { postJson } from "@/lib/client/api";
-import type { PublicRoom } from "@/lib/rooms/protocol";
+import type { PublicParticipant, PublicRoom } from "@/lib/rooms/protocol";
+import { driftLabel } from "@/lib/sync/drift";
+import { RoomPlayer } from "./RoomPlayer";
 import { useRoomSocket, type SocketStatus } from "./useRoomSocket";
 
 const ENDED_TEXT: Record<string, string> = {
@@ -20,6 +22,14 @@ function StatusLine({ status, rttMs }: { status: SocketStatus; rttMs: number | n
   return null;
 }
 
+function SyncCell({ p, playing }: { p: PublicParticipant; playing: boolean }) {
+  if (!p.playerReady) return <span className="muted small">{p.connected ? "no video yet" : ""}</span>;
+  if (p.buffering) return <span className="error small">buffering…</span>;
+  if (p.role === "host") return <span className="muted small">in control</span>;
+  if (!playing) return <span className="muted small">video loaded</span>;
+  return <span className={p.driftMs !== null && Math.abs(p.driftMs) < 250 ? "sync ok small" : "sync small"}>{driftLabel(p.driftMs)}</span>;
+}
+
 export function RoomView({
   initial,
   isHost,
@@ -30,7 +40,7 @@ export function RoomView({
   inviteUrl: string;
 }) {
   const router = useRouter();
-  const { room, status, endedReason, rttMs, send } = useRoomSocket(initial.id, initial);
+  const { room, status, endedReason, rttMs, send, serverNow } = useRoomSocket(initial.id, initial);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -57,6 +67,12 @@ export function RoomView({
   const me = room.participants.find((p) => p.id === room.you);
   const everyoneReady = room.participants.length > 1 && room.participants.every((p) => p.ready);
   const waitingFor = room.participants.filter((p) => !p.ready).map((p) => p.name);
+  const startHint =
+    room.participants.length < 2
+      ? "Waiting for someone to join…"
+      : everyoneReady
+        ? "Everyone is ready."
+        : `Waiting for ${waitingFor.join(", ")}…`;
 
   async function copyInvite() {
     try {
@@ -103,6 +119,20 @@ export function RoomView({
       </section>
 
       <section className="panel">
+        <RoomPlayer
+          roomId={room.id}
+          isHost={isHost}
+          playback={room.playback}
+          serverNow={serverNow}
+          rttMs={rttMs}
+          send={send}
+          connected={status === "open"}
+          canStart={everyoneReady}
+          startHint={startHint}
+        />
+      </section>
+
+      <section className="panel">
         <h2>Who&apos;s here</h2>
         <ul className="participants">
           {room.participants.map((p) => (
@@ -113,6 +143,7 @@ export function RoomView({
                 {p.id === room.you && <span className="muted"> (you)</span>}
                 {p.role === "host" && <span className="badge">host</span>}
               </span>
+              <SyncCell p={p} playing={room.playback.status === "playing"} />
               <span className={p.ready ? "ready yes" : "ready"}>{p.ready ? "Ready" : "Not ready"}</span>
             </li>
           ))}
@@ -126,23 +157,8 @@ export function RoomView({
           >
             {me?.ready ? "I'm not ready" : "I'm ready"}
           </button>
-          {isHost && (
-            <button className="button" disabled title="Synchronised playback is the next phase">
-              Start Together
-            </button>
-          )}
         </div>
-        <p className="muted small">
-          {room.participants.length < 2
-            ? "Waiting for someone to join…"
-            : everyoneReady
-              ? "Everyone is ready."
-              : `Waiting for ${waitingFor.join(", ")}…`}{" "}
-          Synchronised playback (Start Together) comes in the next phase.
-        </p>
-        {!isHost && (
-          <p className="muted small">Video for guests isn&apos;t set up yet — for now the room shows who&apos;s here and ready.</p>
-        )}
+        <p className="muted small">{startHint} Loading the video marks you ready.</p>
       </section>
 
       <div className="row">

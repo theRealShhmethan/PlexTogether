@@ -9,7 +9,10 @@ import { useEffect, useState } from "react";
 const POLL_INTERVAL_MS = 1000;
 const MAX_ATTEMPTS = 30;
 
-type Outcome = { ok: true } | { ok: false; message: string };
+type Outcome = { ok: true; returnTo: string } | { ok: false; message: string };
+
+// Mirrors the server-side check; the server only ever stores these shapes.
+const safeReturnTo = (p: unknown) => (typeof p === "string" && /^\/(r\/[A-Za-z0-9_-]{22})?$/.test(p) ? p : "/");
 
 // Completing a PIN is one-shot on the server, so there must be exactly one
 // poller per page load — even when React (dev/StrictMode) runs effects twice.
@@ -23,7 +26,10 @@ async function completeSignIn(): Promise<Outcome> {
     } catch {
       return { ok: false, message: "Network error while finishing sign-in." };
     }
-    if (res.status === 200) return { ok: true };
+    if (res.status === 200) {
+      const body = (await res.json().catch(() => ({}))) as { returnTo?: unknown };
+      return { ok: true, returnTo: safeReturnTo(body.returnTo) };
+    }
     if (res.status !== 202) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       return { ok: false, message: body.error ?? `Sign-in failed (HTTP ${res.status})` };
@@ -44,7 +50,7 @@ export default function AuthCallbackPage() {
       if (cancelled) return;
       inflight = null;
       if (outcome.ok) {
-        router.replace("/");
+        router.replace(outcome.returnTo);
         router.refresh();
       } else {
         setError(outcome.message);

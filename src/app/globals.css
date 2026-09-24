@@ -438,3 +438,21 @@ a.button {
   color: #4caf6a;
   font-weight: 600;
 }
+
+/* ---------- sync ---------- */
+
+.video.hidden {
+  display: none;
+}
+
+.sync-bar {
+  justify-content: space-between;
+}
+
+.sync {
+  color: var(--muted);
+}
+
+.sync.ok {
+  color: #4caf6a;
+}

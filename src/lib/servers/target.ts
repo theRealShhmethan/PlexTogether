@@ -7,6 +7,17 @@ import type { HostSession } from "@/lib/session/store";
 
 export type HostContext = { session: HostSession; target: PmsTarget };
 
+/** PMS target for a session's selected server (server-side only: contains the token). */
+export function targetFor(session: HostSession): PmsTarget | null {
+  const selected = session.selectedServer;
+  if (!selected) return null;
+  return {
+    client: plexClientFor(session.clientIdentifier),
+    baseUrl: selected.connection.uri,
+    token: selected.accessToken,
+  };
+}
+
 /**
  * Resolves the signed-in host and their selected server for a route handler,
  * or returns the error Response to send.
@@ -16,14 +27,7 @@ export async function requireSelectedServer(): Promise<HostContext | Response> {
   if (!session) return jsonError(401, "Not signed in");
   const selected = session.selectedServer;
   if (!selected) return jsonError(409, "Select a Plex Media Server first");
-  return {
-    session,
-    target: {
-      client: plexClientFor(session.clientIdentifier),
-      baseUrl: selected.connection.uri,
-      token: selected.accessToken,
-    },
-  };
+  return { session, target: targetFor(session)! };
 }
 
 /** Maps PMS failures to a JSON error without leaking URLs or tokens. */

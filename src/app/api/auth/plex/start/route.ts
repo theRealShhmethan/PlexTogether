@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
+import { z } from "zod";
 import { getConfig } from "@/lib/config";
 import { isSameOrigin, jsonError } from "@/lib/http/security";
 import { buildAuthAppUrl, createJwtPin, createLegacyPin } from "@/lib/plex/auth";
@@ -10,6 +11,8 @@ import { plexClientFor } from "@/lib/session/host";
 import { PENDING_LOGIN_TTL_MS, randomId, savePendingLogin } from "@/lib/session/store";
 
 const CLIENT_ID_PATTERN = /^[0-9a-f-]{36}$/;
+// SECURITY: only our own home page or a room page — never an arbitrary URL (no open redirect).
+const ReturnToSchema = z.union([z.literal("/"), z.string().regex(/^\/r\/[A-Za-z0-9_-]{22}$/)]).catch("/");
 
 /**
  * Step 1 of sign-in: create a PIN and return the app.plex.tv URL the browser
@@ -19,6 +22,9 @@ const CLIENT_ID_PATTERN = /^[0-9a-f-]{36}$/;
 export async function POST(request: Request) {
   const config = getConfig();
   if (!isSameOrigin(request, config.appOrigin)) return jsonError(403, "Cross-origin request rejected");
+
+  const body = (await request.json().catch(() => ({}))) as { returnTo?: unknown };
+  const returnTo = ReturnToSchema.parse(body?.returnTo ?? "/");
 
   const store = await cookies();
   const clientIdCookie = clientIdCookieName(config.authMode);
@@ -46,6 +52,7 @@ export async function POST(request: Request) {
     mode: config.authMode,
     deviceKey,
     pinId: pin.id,
+    returnTo,
     expiresAt: Date.now() + PENDING_LOGIN_TTL_MS,
   });
 

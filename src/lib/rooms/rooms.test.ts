@@ -8,6 +8,7 @@ import type { PublicRoom, ServerMessage } from "./protocol";
 import { handleRoomUpgrade } from "./socket";
 
 const ORIGIN = "http://localhost:3000";
+const item = { ratingKey: "70", serverId: "machine-1", serverName: "Synology-NAS", durationMs: 7_800_000 };
 let server: Server;
 let port: number;
 
@@ -67,8 +68,8 @@ const lastState = (c: Client): PublicRoom | undefined =>
 
 describe("room hub", () => {
   it("creates unguessable room ids and one room per host", () => {
-    const a = createRoom({ hostSessionId: "h", hostName: "Ethan", title: "Top Gun" });
-    const b = createRoom({ hostSessionId: "h", hostName: "Ethan", title: "Heat" });
+    const a = createRoom({ hostSessionId: "h", hostName: "Ethan", title: "Top Gun", item });
+    const b = createRoom({ hostSessionId: "h", hostName: "Ethan", title: "Heat", item });
     if (!a.ok || !b.ok) throw new Error("create failed");
     expect(a.room.id).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(getRoom(a.room.id)).toBeUndefined(); // replaced
@@ -76,7 +77,7 @@ describe("room hub", () => {
   });
 
   it("gives guests a seat secret that dies when they leave or the room ends", () => {
-    const r = createRoom({ hostSessionId: "h", hostName: "Ethan", title: "T" });
+    const r = createRoom({ hostSessionId: "h", hostName: "Ethan", title: "T", item });
     if (!r.ok) throw new Error();
     const j = joinRoom(r.room.id, "Lexi");
     if (!j.ok) throw new Error();
@@ -91,7 +92,7 @@ describe("room hub", () => {
   });
 
   it("releases a browser's previous seat when it joins again", () => {
-    const r = createRoom({ hostSessionId: "h", hostName: "Ethan", title: "T" });
+    const r = createRoom({ hostSessionId: "h", hostName: "Ethan", title: "T", item });
     if (!r.ok) throw new Error();
     const first = joinRoom(r.room.id, "Lexi");
     if (!first.ok) throw new Error();
@@ -105,7 +106,7 @@ describe("room hub", () => {
 describe("room sockets", () => {
   it("identifies host and guest, broadcasts ready state, and never sends tokens", async () => {
     const session = hostSession();
-    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "Top Gun" });
+    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "Top Gun", item });
     if (!r.ok) throw new Error();
     const j = joinRoom(r.room.id, "Lexi");
     if (!j.ok) throw new Error();
@@ -137,7 +138,7 @@ describe("room sockets", () => {
 
   it("answers pings with server time", async () => {
     const session = hostSession();
-    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "T" });
+    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "T", item });
     if (!r.ok) throw new Error();
     const host = await connect(r.room.id, `pt_session=${session.id}`);
     host.ws.send(JSON.stringify({ type: "ping", t: 123 }));
@@ -148,14 +149,14 @@ describe("room sockets", () => {
 
   it("rejects cross-origin connections before upgrading", async () => {
     const session = hostSession();
-    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "T" });
+    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "T", item });
     if (!r.ok) throw new Error();
     await expect(connect(r.room.id, `pt_session=${session.id}`, "https://evil.example")).rejects.toThrow(/403/);
   });
 
   it("closes connections from non-participants, and from anyone once the room is gone", async () => {
     const session = hostSession();
-    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "T" });
+    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "T", item });
     if (!r.ok) throw new Error();
     const stranger = await connect(r.room.id, "pt_guest=made-up");
     expect((await stranger.closed).code).toBe(4001);
@@ -168,7 +169,7 @@ describe("room sockets", () => {
 
   it("tells everyone when the host ends the room", async () => {
     const session = hostSession();
-    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "T" });
+    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "T", item });
     if (!r.ok) throw new Error();
     const j = joinRoom(r.room.id, "Lexi");
     if (!j.ok) throw new Error();
@@ -180,7 +181,7 @@ describe("room sockets", () => {
 
   it("ignores malformed and oversized messages", async () => {
     const session = hostSession();
-    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "T" });
+    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "T", item });
     if (!r.ok) throw new Error();
     const host = await connect(r.room.id, `pt_session=${session.id}`);
     host.ws.send("not json");
@@ -188,5 +189,69 @@ describe("room sockets", () => {
     await until(() => (host.messages.filter((m) => m.type === "error").length >= 2 ? true : undefined));
     host.ws.send("x".repeat(10_000));
     expect((await host.closed).code).toBe(1009); // "message too big"
+  });
+});
+
+describe("playback sync over sockets", () => {
+  async function setup() {
+    const session = hostSession();
+    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "Top Gun", item });
+    if (!r.ok) throw new Error();
+    const j = joinRoom(r.room.id, "Lexi");
+    if (!j.ok) throw new Error();
+    const host = await connect(r.room.id, `pt_session=${session.id}`);
+    const guest = await connect(r.room.id, `pt_guest=${j.secret}`);
+    return { room: r.room, host, guest };
+  }
+  const lastPlayback = (c: Client) =>
+    [...c.messages].reverse().find((m): m is Extract<ServerMessage, { type: "playback" }> => m.type === "playback")
+      ?.playback;
+
+  it("lets only the host control playback", async () => {
+    const { host, guest } = await setup();
+    guest.ws.send(JSON.stringify({ type: "host", action: "pause", positionMs: 5000, latencyMs: 0 }));
+    await until(() => guest.messages.find((m) => m.type === "error" && /Only the host/.test(m.message)));
+    expect(lastPlayback(host)).toBeUndefined();
+
+    const before = Date.now();
+    host.ws.send(JSON.stringify({ type: "host", action: "pause", positionMs: 61_000, latencyMs: 40 }));
+    const pb = await until(() => lastPlayback(guest));
+    expect(pb).toMatchObject({ status: "paused", positionMs: 61_000 });
+    // Back-dated by the host's one-way latency.
+    expect(pb.anchorServerTime).toBeLessThanOrEqual(Date.now() - 40);
+    expect(pb.anchorServerTime).toBeGreaterThanOrEqual(before - 40);
+    host.ws.close();
+    guest.ws.close();
+  });
+
+  it("schedules Start Together a moment ahead, and ticks never un-pause", async () => {
+    const { room, host, guest } = await setup();
+    const before = Date.now();
+    host.ws.send(JSON.stringify({ type: "start", positionMs: 0 }));
+    const pb = await until(() => lastPlayback(guest));
+    expect(pb.status).toBe("playing");
+    expect(pb.anchorServerTime - before).toBeGreaterThanOrEqual(2000);
+
+    host.ws.send(JSON.stringify({ type: "host", action: "pause", positionMs: 3000, latencyMs: 0 }));
+    await until(() => (lastPlayback(guest)?.status === "paused" ? true : undefined));
+    host.ws.send(JSON.stringify({ type: "host", action: "tick", positionMs: 9000, latencyMs: 0 }));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(getRoom(room.id)!.playback).toMatchObject({ status: "paused", positionMs: 3000 });
+    host.ws.close();
+    guest.ws.close();
+  });
+
+  it("shares each guest's drift and player state with the room", async () => {
+    const { host, guest } = await setup();
+    guest.ws.send(JSON.stringify({ type: "status", playerReady: true, buffering: false, driftMs: 82 }));
+    const lexi = await until(() => {
+      const p = lastState(host)?.participants.find((x) => x.name === "Lexi");
+      return p?.playerReady ? p : undefined;
+    });
+    expect(lexi).toMatchObject({ playerReady: true, buffering: false });
+    // Drift-only changes are coalesced (≤1 broadcast/s).
+    await until(() => (lastState(host)?.participants.find((x) => x.name === "Lexi")?.driftMs === 82 ? true : undefined), 3000);
+    host.ws.close();
+    guest.ws.close();
   });
 });

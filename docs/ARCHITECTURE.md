@@ -192,7 +192,16 @@ and use `relay` only as a last resort.
 - **Limits:** one room per host, 8 participants, and a 6 h expiry. Ending or expiring a room closes every socket and invalidates every seat.
 - **What rooms carry:** no Plex token ever goes into a room or a socket message.
 
-**Planned for Phases 7–8:**
+**Phase 7 as built (sync):**
+- **Anchor:** the server holds the room's playback as an anchor: `{status, positionMs, anchorServerTime}`.
+- **Host actions:** the host's own play, pause and seek (and a `tick` every 2 s while playing) re-anchor it, back-dated by the host's estimated one-way latency. Only the host's socket may send `host` or `start`. Ticks never un-pause.
+- **Shared clock:** each browser estimates its offset to the server clock from ping round-trips (a burst of 5 on connect, then every 10 s, keeping the lowest-RTT sample; see `src/lib/sync/clock.ts`).
+- **Guest correction:** every 500 ms a guest computes the expected position and corrects: under 250 ms ignore; 250–750 ms `playbackRate` ±5%; 750 ms–2 s ±10% (with hysteresis down to 100 ms); over 2 s hard seek, followed by a 3 s cooldown for HLS to catch up (`src/lib/sync/drift.ts`).
+- **Start Together:** schedules `playing` 2.5 s in the future, so every player starts at the same server time.
+- **Status:** guests report drift, buffering and player-loaded state once a second (state broadcasts are coalesced to at most 1/s), which drives "Synced · 82 ms".
+- **Guest video = Option A (for now):** each participant streams with **their own** Plex sign-in in that browser (`/api/rooms/<id>/playback/start`). A guest without a Plex sign-in is asked to sign in, and sign-in returns them to the room via a validated `returnTo`. Nobody ever receives another person's token. Option B (accountless gateway) could be added later without changing the sync protocol.
+
+**Planned for Phase 8:**
 
 - Room ids / invite tokens: 128+ bits from `crypto.randomBytes`, unguessable. Rooms are in memory
   and expire (e.g. 6 h, or when the host ends them).

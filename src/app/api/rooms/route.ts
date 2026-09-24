@@ -29,6 +29,12 @@ export async function POST(request: Request) {
     hostSessionId: session.id,
     hostName: user.profile ?? user.displayName,
     title: itemHeading(session.selectedItem),
+    item: {
+      ratingKey: session.selectedItem.ratingKey,
+      serverId: session.selectedServer.serverId,
+      serverName: session.selectedServer.name,
+      durationMs: session.selectedItem.durationMs,
+    },
   });
   if (!result.ok) return jsonError(503, result.error);
   return Response.json(

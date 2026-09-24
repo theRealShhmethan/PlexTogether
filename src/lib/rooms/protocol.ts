@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { PlaybackAnchor } from "@/lib/sync/drift";
 
 /**
  * Room WebSocket protocol, shared by the server (server.ts) and browsers.
@@ -11,6 +12,11 @@ export type PublicParticipant = {
   role: "host" | "guest";
   ready: boolean;
   connected: boolean;
+  /** Player loaded and able to follow playback. */
+  playerReady: boolean;
+  buffering: boolean;
+  /** Last reported distance from the host (ms, + = ahead); null if not playing. */
+  driftMs: number | null;
 };
 
 export type PublicRoom = {
@@ -23,17 +29,39 @@ export type PublicRoom = {
   expiresAt: number;
   /** The viewer's own participant id. */
   you: string;
+  /** The room's playback, as set by the host. */
+  playback: PlaybackAnchor;
 };
+
+const PositionMs = z.number().finite().min(0).max(24 * 60 * 60 * 1000);
 
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ready"), ready: z.boolean() }),
-  // Round-trip timing; Phase 7 uses it for clock-offset estimates.
+  // Round-trip timing for clock-offset estimates. `t` is the client's Date.now().
   z.object({ type: z.literal("ping"), t: z.number().finite() }),
+  // Host only: what the host's player just did. `latencyMs` ≈ one-way delay, to back-date the anchor.
+  z.object({
+    type: z.literal("host"),
+    action: z.enum(["play", "pause", "seek", "tick"]),
+    positionMs: PositionMs,
+    latencyMs: z.number().finite().min(0).max(5000),
+  }),
+  // Host only: everyone starts together from `positionMs`, a moment from now.
+  z.object({ type: z.literal("start"), positionMs: PositionMs }),
+  // Anyone: their player's state, for sync display (and Phase 8 buffering).
+  z.object({
+    type: z.literal("status"),
+    playerReady: z.boolean(),
+    buffering: z.boolean(),
+    driftMs: z.number().finite().min(-86_400_000).max(86_400_000).nullable(),
+  }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 export type ServerMessage =
   | { type: "state"; room: PublicRoom }
+  // Sent on every host playback change; cheaper than a full state message.
+  | { type: "playback"; playback: PlaybackAnchor }
   | { type: "ended"; reason: "host-ended" | "expired" | "replaced" | "removed" }
   | { type: "pong"; t: number; serverTime: number }
   | { type: "error"; message: string };

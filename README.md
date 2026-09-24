@@ -13,8 +13,8 @@ media; PlexTogether handles rooms and synchronization.
 | 3 | Server discovery + connectivity check | ✅ done — verified against a real PMS (Synology, 1.42.1) |
 | 4 | Library browsing, Continue Watching, search, pick an item; Plex Home profile switching | ✅ done — verified against a real PMS |
 | 5 | Playback proof of concept (host, HLS via Plex's transcoder, progress saved to Plex) | ✅ implemented, **needs a real-server test** |
-| 6 | Rooms: invite link, join with a name, participants, ready, end, expiry | ✅ implemented, **needs a two-browser test**. How guests get *video* is still undecided (see below) |
-| 7 | Playback sync | ⏳ not started |
+| 6 | Rooms: invite link, join with a name, participants, ready, end, expiry | ✅ done — verified with two browsers |
+| 7 | Playback sync: Start Together, play/pause/seek, clock sync, drift correction | ✅ implemented, **needs a two-browser test** |
 | 8 | Buffering / reconnect | ⏳ not started |
 
 ### ⚠️ Guest mode limitation

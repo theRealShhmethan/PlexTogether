@@ -24,6 +24,8 @@ export type PendingLogin = {
   /** JWT mode only. */
   deviceKey: DeviceKey | null;
   pinId: number;
+  /** Where to send the browser after sign-in (validated same-site path). */
+  returnTo: string;
   expiresAt: number;
 };
 

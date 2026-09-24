@@ -3,7 +3,17 @@ import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import { COOKIE_GUEST, COOKIE_SESSION, readCookie } from "@/lib/session/cookieNames";
 import { getSession } from "@/lib/session/store";
-import { attachSocket, detachSocket, getRoom, resolveGuest, setReady, type RoomConnection } from "./hub";
+import {
+  attachSocket,
+  detachSocket,
+  getRoom,
+  hostPlayback,
+  resolveGuest,
+  setReady,
+  startTogether,
+  updateStatus,
+  type RoomConnection,
+} from "./hub";
 import { CLOSE, ClientMessageSchema, ROOM_SOCKET_PATH, RoomIdSchema, type ServerMessage } from "./protocol";
 
 /**
@@ -98,6 +108,20 @@ export function handleRoomUpgrade(req: IncomingMessage, socket: Duplex, head: Bu
         case "ping":
           conn.send({ type: "pong", t: msg.data.t, serverTime: Date.now() });
           break;
+        case "status":
+          updateStatus(roomId.data, participantId, msg.data);
+          break;
+        case "host":
+        case "start": {
+          // Only the host controls playback.
+          if (getRoom(roomId.data)?.hostParticipantId !== participantId) {
+            conn.send({ type: "error", message: "Only the host controls playback" });
+            break;
+          }
+          if (msg.data.type === "start") startTogether(roomId.data, msg.data.positionMs);
+          else hostPlayback(roomId.data, msg.data.action, msg.data.positionMs, msg.data.latencyMs);
+          break;
+        }
       }
     });
     ws.on("close", () => detachSocket(roomId.data, conn));

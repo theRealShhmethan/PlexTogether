@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     setSecureCookie(store, COOKIE_SESSION, session.id, SESSION_TTL_MS / 1000);
 
     return Response.json(
-      { status: "authorized", user: toPublicUser(session) },
+      { status: "authorized", user: toPublicUser(session), returnTo: pending.returnTo },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (err) {
