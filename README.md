@@ -9,7 +9,7 @@ media; PlexTogether handles rooms and synchronization.
 | Phase | Feature | Status |
 | --- | --- | --- |
 | 1 | Project foundation | ✅ done |
-| 2 | Plex sign-in (JWT PIN flow) | ✅ implemented, **needs a real sign-in test** |
+| 2 | Plex sign-in (JWT PIN flow) | ✅ done — verified with a real account (Chrome, Windows) |
 | 3 | Server discovery | ⏳ not started |
 | 4 | Library browsing | ⏳ not started |
 | 5 | Playback proof of concept | ⏳ not started |
