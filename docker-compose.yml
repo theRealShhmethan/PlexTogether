@@ -1,0 +1,20 @@
+# PlexTogether on a Synology NAS (Container Manager → Project) or any Docker host.
+# 1. Copy .env.example to .env next to this file and fill in APP_URL and SESSION_SECRET.
+# 2. Put DSM's reverse proxy (HTTPS) in front — see docs/DEPLOY-SYNOLOGY.md.
+services:
+  plextogether:
+    build: .
+    image: plextogether:latest
+    container_name: plextogether
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    ports:
+      # Only reachable from the NAS itself; the HTTPS reverse proxy is the way in.
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - plextogether-data:/app/.data
+
+volumes:
+  plextogether-data:

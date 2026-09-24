@@ -16,6 +16,8 @@ media; PlexTogether handles rooms and synchronization.
 | 6 | Rooms: invite link, join with a name, participants, ready, end, expiry | ✅ done — verified with two browsers |
 | 7 | Playback sync: Start Together, shared play/pause/seek with per-guest permissions, clock sync, drift correction | ✅ done — verified with two browsers after tuning |
 | 8 | Buffering pauses the room ("Waiting for …"), coordinated resume, stream/network recovery, auto-rejoin after reload, rooms survive restarts | ✅ implemented, **needs a real-world test** (buffering part verified) |
+| — | Audio language and subtitle selection (per viewer, saved to their Plex account) | ✅ implemented, **needs a real-server test** |
+| — | Docker image + Synology deployment guide; browser picks the Plex address it can reach | ✅ implemented, **needs a NAS test** |
 
 ### ⚠️ Guest mode limitation
 
@@ -37,6 +39,11 @@ Watch Pass on the viewer's account, for remote video playback.
 - `server.ts`: a custom Node server (run with `tsx`) that serves Next.js **and** the room WebSockets (`/ws/rooms/<id>`, via `ws`) on one port. Next.js route handlers can't hold WebSockets. Room state is in memory (`src/lib/rooms/hub.ts`).
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full plan.
+
+## Deploying (Synology NAS / Docker)
+
+See **[docs/DEPLOY-SYNOLOGY.md](docs/DEPLOY-SYNOLOGY.md)**. In short: `docker compose up -d --build`, put DSM's reverse
+proxy in front with HTTPS and the **WebSocket** custom header, and set `APP_URL` and `SESSION_SECRET` in `.env`.
 
 ## Development
 
