@@ -68,6 +68,15 @@ describe("transcodeParams", () => {
     expect(transcodeParams({ ratingKey: "70", location: "lan", offsetMs: 0 }, "s").offset).toBeUndefined();
   });
 
+  it("applies the viewer's quality choice", () => {
+    expect(transcodeParams({ ratingKey: "70", location: "lan", quality: "720" }, "s")).toMatchObject({
+      videoBitrate: "4000",
+      videoResolution: "1280x720",
+    });
+    expect(transcodeParams({ ratingKey: "70", location: "wan", quality: "original" }, "s").videoBitrate).toBeUndefined();
+    expect(transcodeParams({ ratingKey: "70", location: "wan", quality: "auto" }, "s").videoResolution).toBe("1920x1080");
+  });
+
   it("rejects non-numeric ids", () => {
     expect(() => transcodeParams({ ratingKey: "70/../../:/prefs", location: "lan" }, "s")).toThrow();
   });

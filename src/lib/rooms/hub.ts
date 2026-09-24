@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { readSealedFile, writeSealedFile } from "@/lib/crypto/sealedFile";
 import { expectedPositionMs, type PlaybackAnchor } from "@/lib/sync/drift";
-import type { Permissions, PublicRoom, ServerMessage } from "./protocol";
+import type { ChatMessage, Permissions, PublicRoom, Reaction, ServerMessage } from "./protocol";
 
 /**
  * In-memory rooms (v0.1; lost on restart).
@@ -57,6 +57,8 @@ export type RoomItem = {
   durationMs: number | null;
   /** The host's Plex resume point when the room was created; the room starts there. */
   resumeMs?: number | null;
+  /** For episodes: the next episode in the show. */
+  next?: { ratingKey: string; title: string } | null;
 };
 
 export type Room = {
@@ -79,6 +81,12 @@ export type Room = {
   waitingFor: Set<string>;
   autoPauseSeq: number | null;
   bufferTimer?: ReturnType<typeof setTimeout>;
+  /** Start automatically once everyone's player is loaded (after "next episode"). */
+  autoStart: boolean;
+  /** Recent chat (memory only, not saved to disk). */
+  chat: ChatMessage[];
+  /** Per-participant timestamps of recent chat/reactions, for rate limiting. */
+  chatTimes: Map<string, number[]>;
 };
 
 /** What the hub needs from a socket; implemented by server.ts with `ws`. */
@@ -121,7 +129,10 @@ const ROOMS_PURPOSE = "plextogether-rooms-v1";
 const SAVE_DEBOUNCE_MS = 1000;
 
 type SavedParticipant = Pick<Participant, "id" | "name" | "role" | "ready" | "joinedAt" | "permissions">;
-type SavedRoom = Omit<Room, "participants" | "waitingFor" | "autoPauseSeq" | "broadcastTimer" | "bufferTimer"> & {
+type SavedRoom = Omit<
+  Room,
+  "participants" | "waitingFor" | "autoPauseSeq" | "broadcastTimer" | "bufferTimer" | "chat" | "chatTimes" | "autoStart"
+> & {
   participants: SavedParticipant[];
 };
 type Snapshot = { savedAt: number; rooms: SavedRoom[]; guests: [string, { roomId: string; participantId: string }][] };
@@ -205,6 +216,9 @@ export function configureRoomPersistence(cfg: { key: Buffer; path: string } | nu
       playback,
       waitingFor: new Set(),
       autoPauseSeq: null,
+      autoStart: false,
+      chat: [],
+      chatTimes: new Map(),
     });
     restored++;
   }
@@ -275,6 +289,9 @@ export function publicRoom(room: Room, viewerId: string): PublicRoom {
     playback: room.playback,
     durationMs: room.item.durationMs,
     resumeMs: room.item.resumeMs ?? null,
+    itemKey: room.item.ratingKey,
+    next: room.item.next ? { title: room.item.next.title } : null,
+    autoStart: room.autoStart,
     waitingFor: [...room.waitingFor].map((id) => room.participants.get(id)?.name).filter((n): n is string => !!n),
   };
 }
@@ -323,6 +340,9 @@ export function createRoom(opts: {
     playback: { status: "idle", positionMs: opts.item.resumeMs ?? 0, anchorServerTime: now, by: null, seq: 0 },
     waitingFor: new Set(),
     autoPauseSeq: null,
+    autoStart: false,
+    chat: [],
+    chatTimes: new Map(),
     createdAt: now,
     expiresAt: now + ROOM_TTL_MS,
   };
@@ -425,8 +445,101 @@ export function startTogether(roomId: string, participantId: string, positionMs:
     seq: room.playback.seq + 1,
   };
   clearWaiting(room);
+  room.autoStart = false;
   broadcastPlayback(room);
   return true;
+}
+
+// ---------- what's playing ----------
+
+/**
+ * Host only: switch the room to another title (same link, same people).
+ * Everyone's player reloads it; the room waits at its resume point for Start
+ * Together — or starts by itself once all are loaded if `autoStart` (next episode).
+ */
+export function changeItem(
+  roomId: string,
+  byId: string,
+  change: { title: string; item: RoomItem; autoStart: boolean },
+): boolean {
+  const room = getRoom(roomId);
+  if (!room || byId !== room.hostParticipantId) return false;
+  room.item = change.item;
+  room.title = change.title;
+  room.autoStart = change.autoStart;
+  room.playback = {
+    status: "idle",
+    positionMs: change.item.resumeMs ?? 0,
+    anchorServerTime: Date.now(),
+    by: null,
+    seq: room.playback.seq + 1,
+  };
+  room.waitingFor.clear();
+  room.autoPauseSeq = null;
+  for (const p of room.participants.values()) {
+    p.playerReady = false;
+    p.buffering = false;
+    p.bufferingSince = null;
+    p.driftMs = null;
+    p.positionMs = null;
+  }
+  broadcastPlayback(room);
+  broadcast(room);
+  return true;
+}
+
+// ---------- chat & reactions ----------
+
+const CHAT_HISTORY = 100;
+/** At most this many chat messages/reactions per participant per window. */
+const CHAT_RATE = { count: 8, windowMs: 10_000 };
+
+function allowChat(room: Room, participantId: string, now: number): boolean {
+  const times = (room.chatTimes.get(participantId) ?? []).filter((t) => now - t < CHAT_RATE.windowMs);
+  if (times.length >= CHAT_RATE.count) {
+    room.chatTimes.set(participantId, times);
+    return false;
+  }
+  times.push(now);
+  room.chatTimes.set(participantId, times);
+  return true;
+}
+
+/** Plain text only: control characters removed, whitespace collapsed. Rendered as text (never HTML). */
+export function cleanChatText(text: string): string {
+  return text
+    .normalize("NFC")
+    .replace(/[\p{Cc}\p{Cf}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+}
+
+export type ChatResult = "ok" | "rate-limited" | "empty" | "not-found";
+
+export function postChat(roomId: string, participantId: string, rawText: string): ChatResult {
+  const room = getRoom(roomId);
+  const p = room?.participants.get(participantId);
+  if (!room || !p) return "not-found";
+  const text = cleanChatText(rawText);
+  if (!text) return "empty";
+  const now = Date.now();
+  if (!allowChat(room, participantId, now)) return "rate-limited";
+  const message: ChatMessage = { id: randomToken(8), from: p.id, name: p.name, text, at: now };
+  room.chat.push(message);
+  if (room.chat.length > CHAT_HISTORY) room.chat.splice(0, room.chat.length - CHAT_HISTORY);
+  for (const c of hub.sockets.get(room.id) ?? []) c.send({ type: "chat", message });
+  return "ok";
+}
+
+export function react(roomId: string, participantId: string, emoji: Reaction): ChatResult {
+  const room = getRoom(roomId);
+  const p = room?.participants.get(participantId);
+  if (!room || !p) return "not-found";
+  const now = Date.now();
+  if (!allowChat(room, participantId, now)) return "rate-limited";
+  for (const c of hub.sockets.get(room.id) ?? []) c.send({ type: "reaction", from: p.id, name: p.name, emoji, at: now });
+  return "ok";
 }
 
 // ---------- buffering: pause for everyone, resume together ----------
@@ -566,7 +679,9 @@ export function attachSocket(roomId: string, conn: RoomConnection): void {
   set.add(conn);
   hub.sockets.set(roomId, set);
   const room = hub.rooms.get(roomId);
-  if (room) broadcast(room);
+  if (!room) return;
+  conn.send({ type: "chatHistory", messages: room.chat });
+  broadcast(room);
 }
 
 export function detachSocket(roomId: string, conn: RoomConnection): void {

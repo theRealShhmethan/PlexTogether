@@ -38,11 +38,23 @@ export type PublicRoom = {
   durationMs: number | null;
   /** Where the host left off on Plex when the room was created (null = start at the beginning). */
   resumeMs: number | null;
+  /** Identifies the current title; changes when the host switches what's playing. */
+  itemKey: string;
+  /** For episodes: the next episode in the show, if any. */
+  next: { title: string } | null;
+  /** Set after "next episode": the host's player starts everyone automatically once all are loaded. */
+  autoStart: boolean;
   /** Names of people whose buffering has paused the room ("Waiting for Lexi…"). */
   waitingFor: string[];
 };
 
 const PositionMs = z.number().finite().min(0).max(24 * 60 * 60 * 1000);
+
+export const CHAT_MAX_LENGTH = 500;
+export const REACTIONS = ["👍", "😂", "😮", "😢", "❤️", "🔥"] as const;
+export type Reaction = (typeof REACTIONS)[number];
+
+export type ChatMessage = { id: string; from: string; name: string; text: string; at: number };
 
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ready"), ready: z.boolean() }),
@@ -58,6 +70,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   }),
   // Host only: everyone starts together from `positionMs`, a moment from now.
   z.object({ type: z.literal("start"), positionMs: PositionMs }),
+  // Chat (plain text) and quick reactions.
+  z.object({ type: z.literal("chat"), text: z.string().min(1).max(CHAT_MAX_LENGTH) }),
+  z.object({ type: z.literal("react"), emoji: z.enum(REACTIONS) }),
   // Host only: a guest's permissions ("*" = every guest).
   z.object({
     type: z.literal("permissions"),
@@ -83,7 +98,10 @@ export type ServerMessage =
   | { type: "playback"; playback: PlaybackAnchor }
   | { type: "ended"; reason: "host-ended" | "expired" | "replaced" | "removed" }
   | { type: "pong"; t: number; serverTime: number }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "chat"; message: ChatMessage }
+  | { type: "chatHistory"; messages: ChatMessage[] }
+  | { type: "reaction"; from: string; name: string; emoji: Reaction; at: number };
 
 /** Display names: trimmed, 1–32 characters, no control characters. */
 export const DisplayNameSchema = z

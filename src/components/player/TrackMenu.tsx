@@ -2,13 +2,32 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getJson, postJson } from "@/lib/client/api";
+import type { Quality } from "@/lib/plex/playback";
 import type { Track, Tracks } from "@/lib/plex/tracks";
+
+const QUALITY_LABELS: Record<Quality, string> = {
+  auto: "Auto (best for your connection)",
+  original: "Original",
+  "1080": "1080p (8 Mbps)",
+  "720": "720p (4 Mbps)",
+  "480": "480p (1.5 Mbps)",
+};
 
 /**
  * Audio language and subtitle picker. Each viewer chooses their own; the
  * choice is saved on their Plex account and the stream restarts in place.
  */
-export function TrackMenu({ apiBase, onChanged }: { apiBase: string; onChanged: () => Promise<void> }) {
+export function TrackMenu({
+  apiBase,
+  onChanged,
+  quality,
+  onQuality,
+}: {
+  apiBase: string;
+  onChanged: () => Promise<void>;
+  quality: Quality;
+  onQuality: (q: Quality) => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
   const [tracks, setTracks] = useState<Tracks | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +70,7 @@ export function TrackMenu({ apiBase, onChanged }: { apiBase: string; onChanged: 
 
   return (
     <div className="track-menu" ref={ref}>
-      <button className="ctl" onClick={() => setOpen((o) => !o)} aria-label="Audio and subtitles" aria-expanded={open}>
+      <button className="ctl" onClick={() => setOpen((o) => !o)} aria-label="Audio, subtitles and quality" aria-expanded={open}>
         <span className="cc">CC</span>
       </button>
       {open && (
@@ -91,7 +110,27 @@ export function TrackMenu({ apiBase, onChanged }: { apiBase: string; onChanged: 
                   ))}
                 </select>
               </label>
-              <p className="muted small">{busy ? "Switching…" : "Saved to your Plex account for this title."}</p>
+              <label className="track-field">
+                <span>Quality</span>
+                <select
+                  value={quality}
+                  disabled={busy}
+                  onChange={async (e) => {
+                    setBusy(true);
+                    await onQuality(e.target.value as Quality);
+                    setBusy(false);
+                  }}
+                >
+                  {(Object.keys(QUALITY_LABELS) as Quality[]).map((q) => (
+                    <option key={q} value={q}>
+                      {QUALITY_LABELS[q]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="muted small">
+                {busy ? "Switching…" : "Audio and subtitles are saved to your Plex account; quality to this browser."}
+              </p>
             </>
           )}
         </div>

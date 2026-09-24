@@ -18,6 +18,7 @@ media; PlexTogether handles rooms and synchronization.
 | 8 | Buffering pauses the room ("Waiting for …"), coordinated resume, stream/network recovery, auto-rejoin after reload, rooms survive restarts | ✅ implemented, **needs a real-world test** (buffering part verified) |
 | — | Audio language and subtitle selection (per viewer, saved to their Plex account) | ✅ implemented, **needs a real-server test** |
 | — | Docker image + Synology deployment guide; browser picks the Plex address it can reach | ✅ implemented, **needs a NAS test** |
+| — | In-room: change title, next episode (auto-start), per-viewer quality, chat and reactions | ✅ implemented, **needs a two-browser test** |
 
 ### ⚠️ Guest mode limitation
 

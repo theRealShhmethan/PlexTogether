@@ -43,6 +43,7 @@ export function LibraryBrowser() {
   const [picking, setPicking] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [activeRoom, setActiveRoom] = useState<{ roomId: string; title: string } | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -51,8 +52,10 @@ export function LibraryBrowser() {
       getJson<{ libraries: LibrarySection[] }>("/api/plex/libraries"),
       getJson<{ item: LibraryItem | null }>("/api/plex/selection"),
       fetchContinueWatching(),
-    ]).then(([libs, sel, cw]) => {
+      getJson<{ roomId: string | null; title: string | null }>("/api/rooms"),
+    ]).then(([libs, sel, cw, active]) => {
       if (cancelled) return;
+      if (active.ok && active.data.roomId) setActiveRoom({ roomId: active.data.roomId, title: active.data.title ?? "" });
       setListing(cw);
       if (libs.ok) setLibraries(libs.data.libraries);
       else setLibrariesError(libs.error);
@@ -124,6 +127,16 @@ export function LibraryBrowser() {
     else setPickError(r.error);
   }
 
+  async function playInRoom() {
+    if (!activeRoom || !selected) return;
+    setCreating(true);
+    setPickError(null);
+    const r = await postJson<{ ok: true }>(`/api/rooms/${activeRoom.roomId}/item`, { ratingKey: selected.ratingKey });
+    setCreating(false);
+    if (r.ok) router.push(`/r/${activeRoom.roomId}`);
+    else setPickError(r.error);
+  }
+
   async function pick(item: LibraryItem) {
     setPicking(true);
     setPickError(null);
@@ -148,9 +161,20 @@ export function LibraryBrowser() {
               <div className="muted small">Tonight&apos;s pick</div>
               <strong>{selected.title}</strong> <span className="muted">{itemSubtitle(selected)}</span>
             </div>
-            <button className="button" onClick={() => void createParty()} disabled={creating}>
-              {creating ? "Creating…" : "Create watch party"}
-            </button>
+            {activeRoom ? (
+              <>
+                <button className="button" onClick={() => void playInRoom()} disabled={creating}>
+                  {creating ? "Switching…" : "Play in your watch party"}
+                </button>
+                <button className="button secondary" onClick={() => void createParty()} disabled={creating}>
+                  New watch party
+                </button>
+              </>
+            ) : (
+              <button className="button" onClick={() => void createParty()} disabled={creating}>
+                {creating ? "Creating…" : "Create watch party"}
+              </button>
+            )}
             <Link className="button secondary" href="/watch">
               ▶ Watch alone
             </Link>

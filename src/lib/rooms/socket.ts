@@ -8,6 +8,8 @@ import {
   detachSocket,
   getRoom,
   controlPlayback,
+  postChat,
+  react,
   resolveGuest,
   setPermissions,
   setReady,
@@ -122,6 +124,15 @@ export function handleRoomUpgrade(req: IncomingMessage, socket: Duplex, head: Bu
             conn.send({ type: "error", message: "Only the host can start the watch party" });
           }
           break;
+        case "chat":
+        case "react": {
+          const r =
+            msg.data.type === "chat"
+              ? postChat(roomId.data, participantId, msg.data.text)
+              : react(roomId.data, participantId, msg.data.emoji);
+          if (r === "rate-limited") conn.send({ type: "error", message: "Slow down a little — too many messages." });
+          break;
+        }
         case "permissions": {
           const { participantId: target, playPause, seek } = msg.data;
           if (!setPermissions(roomId.data, participantId, target, { playPause, seek })) {

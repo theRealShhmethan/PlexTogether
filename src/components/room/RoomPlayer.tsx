@@ -7,6 +7,7 @@ import { TrackMenu } from "@/components/player/TrackMenu";
 import { usePlexStream } from "@/components/player/usePlexStream";
 import { SignInButton } from "@/components/SignInButton";
 import type { ClientMessage, Permissions } from "@/lib/rooms/protocol";
+import type { FloatingReaction } from "./useRoomSocket";
 import { formatTime } from "@/lib/format/time";
 import { correctionFor, DRIFT, driftLabel, expectedPositionMs, type PlaybackAnchor } from "@/lib/sync/drift";
 
@@ -21,6 +22,8 @@ const PAUSED_ALIGN_MS = 1500;
 const LOCAL_SEEK_LEAD_MS = 300;
 /** First guess at how long a new Plex session takes to become playable; learned from experience. */
 const INITIAL_RESTART_MS = 4000;
+/** Countdown before the next episode starts (host can cancel). */
+const UP_NEXT_SECONDS = 10;
 /** Paused and ahead of the room by at most this → wait for the room rather than seek back. */
 const HOLD_MAX_MS = 10_000;
 
@@ -52,6 +55,13 @@ type Props = {
   durationMs: number | null;
   resumeMs: number | null;
   waitingFor: string[];
+  /** Start by itself once everyone is loaded (after "next episode"). */
+  autoStart: boolean;
+  /** Every connected participant's player is loaded. */
+  allLoaded: boolean;
+  next: { title: string } | null;
+  onNextEpisode: () => Promise<void>;
+  reactions: FloatingReaction[];
   serverNow: () => number;
   rttMs: number | null;
   send: (msg: ClientMessage) => void;
@@ -332,6 +342,51 @@ export function RoomPlayer(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once when the socket first connects
   }, [connected, phase.kind, roomId]);
 
+  // --- after "next episode": the host starts everyone once all players are loaded ---
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!isHost || !props.autoStart || autoStarted.current) return;
+    if (playback.status !== "idle" || !playerReady || !props.allLoaded) return;
+    autoStarted.current = true;
+    startTogether();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- startTogether reads refs only
+  }, [isHost, props.autoStart, props.allLoaded, playback.status, playerReady]);
+
+  // --- "Up next" when the title ends ---
+  const [ended, setEnded] = useState(false);
+  const [upNextIn, setUpNextIn] = useState<number | null>(null);
+  const hasNextRef = useRef(false);
+  useEffect(() => {
+    hasNextRef.current = !!props.next;
+  }, [props.next]);
+  useEffect(() => {
+    if (!loaded || ended) return;
+    const id = window.setInterval(() => {
+      const total = stream.durationMs();
+      if (total && mediaTimeMs() >= total - 1500) {
+        setEnded(true);
+        if (isHost && hasNextRef.current) setUpNextIn(UP_NEXT_SECONDS);
+      }
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [loaded, ended, mediaTimeMs, stream, isHost]);
+  useEffect(() => {
+    if (!ended || !props.next || !isHost) return;
+    const id = window.setInterval(() => {
+      setUpNextIn((n) => {
+        if (n === null) return null;
+        if (n <= 1) {
+          window.clearInterval(id);
+          void props.onNextEpisode();
+          return 0;
+        }
+        return n - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per end
+  }, [ended, isHost]);
+
   function startTogether() {
     // Start from the chosen starting point (resume or beginning), not wherever this player drifted.
     send({ type: "start", positionMs: Math.round(anchorRef.current.positionMs) });
@@ -348,6 +403,40 @@ export function RoomPlayer(props: Props) {
   return (
     <div className="player">
       <div ref={containerRef} className={loaded ? "video-box" : "video-box hidden"}>
+        <div className="reaction-layer" aria-hidden="true">
+          {props.reactions.map((r) => (
+            <span key={r.id} className="floating-reaction" style={{ left: `${10 + ((r.id * 37) % 80)}%` }}>
+              {r.emoji}
+              <small>{r.name}</small>
+            </span>
+          ))}
+        </div>
+        {ended && (
+          <div className="up-next">
+            {props.next ? (
+              <>
+                <span className="muted small">Up next</span>
+                <strong>{props.next.title}</strong>
+                {isHost ? (
+                  <div className="row">
+                    <button className="button" onClick={() => void props.onNextEpisode()}>
+                      Play now{upNextIn ? ` (${upNextIn})` : ""}
+                    </button>
+                    {upNextIn !== null && upNextIn > 0 && (
+                      <button className="button secondary" onClick={() => setUpNextIn(null)}>
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <span className="muted small">Starting soon — the host is in charge.</span>
+                )}
+              </>
+            ) : (
+              <strong>That&apos;s the end 🎬</strong>
+            )}
+          </div>
+        )}
         <video
           ref={videoRef}
           className="video"
@@ -377,10 +466,10 @@ export function RoomPlayer(props: Props) {
           extra={
             <TrackMenu
               apiBase={stream.apiBase}
-              onChanged={async () => {
-                // Reload in place; the room follows as usual (and waits if it takes a moment).
-                await stream.reloadHere();
-              }}
+              // Reload in place; the room follows as usual (and waits if it takes a moment).
+              onChanged={stream.reloadHere}
+              quality={stream.quality}
+              onQuality={stream.setQuality}
             />
           }
         />

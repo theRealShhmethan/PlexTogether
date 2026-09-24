@@ -1,8 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CLOSE, ROOM_SOCKET_PATH, type ClientMessage, type PublicRoom, type ServerMessage } from "@/lib/rooms/protocol";
+import {
+  CLOSE,
+  ROOM_SOCKET_PATH,
+  type ChatMessage,
+  type ClientMessage,
+  type PublicRoom,
+  type Reaction,
+  type ServerMessage,
+} from "@/lib/rooms/protocol";
+
 import { ClockSync } from "@/lib/sync/clock";
+
+export type FloatingReaction = { id: number; emoji: Reaction; name: string };
+/** How long a reaction floats over the video. */
+const REACTION_MS = 3000;
 
 export type SocketStatus = "connecting" | "open" | "reconnecting" | "ended" | "not-participant";
 
@@ -22,6 +35,10 @@ export function useRoomSocket(roomId: string, initial: PublicRoom) {
   const [status, setStatus] = useState<SocketStatus>("connecting");
   const [endedReason, setEndedReason] = useState<string | null>(null);
   const [rttMs, setRttMs] = useState<number | null>(null);
+  const [chat, setChat] = useState<ChatMessage[]>([]);
+  const [reactions, setReactions] = useState<FloatingReaction[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
+  const reactionSeq = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
   const clockRef = useRef(new ClockSync());
 
@@ -67,6 +84,22 @@ export function useRoomSocket(roomId: string, initial: PublicRoom) {
             setEndedReason(msg.reason);
             setStatus("ended");
             break;
+          case "chatHistory":
+            setChat(msg.messages);
+            break;
+          case "chat":
+            setChat((c) => [...c.slice(-99), msg.message]);
+            break;
+          case "reaction": {
+            const id = ++reactionSeq.current;
+            setReactions((r) => [...r.slice(-20), { id, emoji: msg.emoji, name: msg.name }]);
+            window.setTimeout(() => setReactions((r) => r.filter((x) => x.id !== id)), REACTION_MS);
+            break;
+          }
+          case "error":
+            setNotice(msg.message);
+            window.setTimeout(() => setNotice((n) => (n === msg.message ? null : n)), 4000);
+            break;
         }
       };
       ws.onclose = (ev) => {
@@ -105,5 +138,5 @@ export function useRoomSocket(roomId: string, initial: PublicRoom) {
   /** Estimated server time now (ms). */
   const serverNow = useCallback(() => clockRef.current.serverNow(), []);
 
-  return { room, status, endedReason, rttMs, send, serverNow };
+  return { room, status, endedReason, rttMs, send, serverNow, chat, reactions, notice };
 }

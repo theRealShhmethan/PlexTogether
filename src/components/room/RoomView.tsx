@@ -6,6 +6,7 @@ import { useState } from "react";
 import { postJson } from "@/lib/client/api";
 import type { PublicParticipant, PublicRoom } from "@/lib/rooms/protocol";
 import { driftLabel } from "@/lib/sync/drift";
+import { ChatPanel } from "./ChatPanel";
 import { PermissionsPanel } from "./PermissionsPanel";
 import { forgetAutoload, RoomPlayer } from "./RoomPlayer";
 import { useRoomSocket, type SocketStatus } from "./useRoomSocket";
@@ -39,7 +40,17 @@ function SyncCell({ p, room }: { p: PublicParticipant; room: PublicRoom }) {
 
 export function RoomView({ initial, isHost, inviteUrl }: { initial: PublicRoom; isHost: boolean; inviteUrl: string }) {
   const router = useRouter();
-  const { room, status, endedReason, rttMs, send, serverNow } = useRoomSocket(initial.id, initial);
+  const { room, status, endedReason, rttMs, send, serverNow, chat, reactions, notice } = useRoomSocket(
+    initial.id,
+    initial,
+  );
+  const [changeError, setChangeError] = useState<string | null>(null);
+
+  async function nextEpisode() {
+    setChangeError(null);
+    const r = await postJson(`/api/rooms/${room.id}/item`, { next: true });
+    if (!r.ok) setChangeError(r.error);
+  }
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -94,9 +105,20 @@ export function RoomView({ initial, isHost, inviteUrl }: { initial: PublicRoom; 
 
   return (
     <div className="room-layout">
+      {notice && (
+        <div className="toast" role="status">
+          {notice}
+        </div>
+      )}
       <div className="room-main">
         <section className="panel">
           <RoomPlayer
+            key={room.itemKey}
+            autoStart={room.autoStart}
+            allLoaded={room.participants.filter((p) => p.connected).every((p) => p.playerReady)}
+            next={room.next}
+            onNextEpisode={nextEpisode}
+            reactions={reactions}
             roomId={room.id}
             me={room.you}
             isHost={isHost}
@@ -139,7 +161,23 @@ export function RoomView({ initial, isHost, inviteUrl }: { initial: PublicRoom; 
               </div>
             </div>
           )}
+
+          {isHost && (
+            <div className="row">
+              <Link className="button secondary small-button" href="/browse">
+                Change title
+              </Link>
+              {room.next && (
+                <button className="button secondary small-button" onClick={() => void nextEpisode()} title={room.next.title}>
+                  Next episode ▶
+                </button>
+              )}
+            </div>
+          )}
+          {changeError && <p className="error small">{changeError}</p>}
         </section>
+
+        <ChatPanel messages={chat} me={room.you} send={send} disabled={status !== "open"} />
 
         <section className="panel">
           <h2>Who&apos;s here</h2>

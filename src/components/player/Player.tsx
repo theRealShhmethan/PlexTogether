@@ -57,7 +57,14 @@ export function Player({ item }: { item: LibraryItem }) {
           onTogglePlay={togglePlay}
           onSeek={(ms) => void seek(ms)}
           busyLabel={busy}
-          extra={<TrackMenu apiBase={stream.apiBase} onChanged={stream.reloadHere} />}
+          extra={
+            <TrackMenu
+              apiBase={stream.apiBase}
+              onChanged={stream.reloadHere}
+              quality={stream.quality}
+              onQuality={stream.setQuality}
+            />
+          }
         />
       </div>
 

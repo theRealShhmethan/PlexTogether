@@ -9,6 +9,8 @@ import { WebSocket } from "ws";
 import { _resetStores, saveSession, type HostSession } from "@/lib/session/store";
 import {
   _resetRooms,
+  changeItem,
+  cleanChatText,
   configureRoomPersistence,
   createRoom,
   endRoom,
@@ -16,7 +18,10 @@ import {
   getRoom,
   joinRoom,
   leaveRoom,
+  postChat,
+  publicRoom,
   resolveGuest,
+  startTogether,
 } from "./hub";
 import type { PublicRoom, ServerMessage } from "./protocol";
 import { handleRoomUpgrade } from "./socket";
@@ -461,5 +466,68 @@ describe("resume point", () => {
     host.ws.send(JSON.stringify({ type: "start", positionMs: 0 }));
     await until(() => (getRoom(r.room.id)?.playback.status === "playing" ? true : undefined));
     host.ws.close();
+  });
+});
+
+describe("changing what's playing", () => {
+  it("lets only the host switch titles, resets players, and exposes the next episode", async () => {
+    const session = hostSession();
+    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "S1 · E1", item });
+    if (!r.ok) throw new Error();
+    const j = joinRoom(r.room.id, "Lexi");
+    if (!j.ok) throw new Error();
+    const room = getRoom(r.room.id)!;
+    room.participants.get(j.participant.id)!.playerReady = true;
+
+    const newItem = { ...item, ratingKey: "71", resumeMs: null, next: { ratingKey: "72", title: "House M.D. · S1 · E3" } };
+    expect(changeItem(r.room.id, j.participant.id, { title: "x", item: newItem, autoStart: false })).toBe(false);
+    expect(changeItem(r.room.id, room.hostParticipantId, { title: "House M.D. · S1 · E2", item: newItem, autoStart: true })).toBe(true);
+
+    expect(room.item.ratingKey).toBe("71");
+    expect(room.playback).toMatchObject({ status: "idle", positionMs: 0, by: null });
+    expect(room.participants.get(j.participant.id)!.playerReady).toBe(false);
+    const pub = publicRoom(room, room.hostParticipantId);
+    expect(pub).toMatchObject({ itemKey: "71", title: "House M.D. · S1 · E2", autoStart: true, next: { title: "House M.D. · S1 · E3" } });
+    expect(JSON.stringify(pub)).not.toContain('"72"'); // the next episode's id stays server-side
+
+    startTogether(r.room.id, room.hostParticipantId, 0);
+    expect(room.autoStart).toBe(false);
+  });
+});
+
+describe("chat and reactions", () => {
+  it("sends history on connect, cleans text, uses server-side names, and rate-limits", async () => {
+    const session = hostSession();
+    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "T", item });
+    if (!r.ok) throw new Error();
+    const j = joinRoom(r.room.id, "Lexi");
+    if (!j.ok) throw new Error();
+    expect(postChat(r.room.id, r.room.hostParticipantId, "  hello\u0000\u200b  there  ")).toBe("ok");
+
+    const guest = await connect(r.room.id, `pt_guest=${j.secret}`);
+    const history = await until(() => guest.messages.find((m) => m.type === "chatHistory"));
+    expect(history).toMatchObject({ messages: [{ name: "Ethan", text: "hello there" }] });
+
+    guest.ws.send(JSON.stringify({ type: "chat", text: "<b>hi</b>", name: "Ethan" }));
+    const mine = await until(() =>
+      guest.messages.find((m): m is Extract<ServerMessage, { type: "chat" }> => m.type === "chat"),
+    );
+    expect(mine.message).toMatchObject({ name: "Lexi", text: "<b>hi</b>" }); // stored as text, rendered as text
+
+    guest.ws.send(JSON.stringify({ type: "react", emoji: "🔥" }));
+    await until(() => guest.messages.find((m) => m.type === "reaction" && m.emoji === "🔥"));
+    guest.ws.send(JSON.stringify({ type: "react", emoji: "💩" }));
+    await until(() => guest.messages.find((m) => m.type === "error" && m.message === "Invalid message"));
+
+    for (let i = 0; i < 10; i++) guest.ws.send(JSON.stringify({ type: "chat", text: `spam ${i}` }));
+    await until(() => guest.messages.find((m) => m.type === "error" && /Slow down/.test(m.message)));
+    guest.ws.close();
+  });
+
+  it("rejects empty messages", () => {
+    const r = createRoom({ hostSessionId: "h", hostName: "Ethan", title: "T", item });
+    if (!r.ok) throw new Error();
+    expect(postChat(r.room.id, r.room.hostParticipantId, " \u0000 ")).toBe("empty");
+    expect(cleanChatText("a\nb\tc")).toBe("a b c");
   });
 });

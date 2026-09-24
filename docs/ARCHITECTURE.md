@@ -210,6 +210,12 @@ and use `relay` only as a last resort.
 - **Reload or reopened link:** a per-browser flag (`localStorage`, room-scoped, cleared on leave/end) reloads the video automatically once the socket connects. If the browser blocks autoplay with sound, playback starts muted with a "click to turn sound on" button.
 - **Server restart:** rooms and guest seats are saved (sealed with `SESSION_SECRET`, purpose-bound, `ROOMS_STORE_PATH`), debounced at 1 s and written on SIGINT/SIGTERM. On startup, unexpired rooms are restored with live state reset. A room that was playing comes back **paused** at the position it had reached when saved.
 
+**In-room extras (built after Phase 8):**
+- **Change title:** `POST /api/rooms/<id>/item`, host only. It re-reads the item from Plex, keeps the same room, link and people, resets everyone's player (they reload at the new resume point, since `RoomPlayer` is keyed by `itemKey`), and waits for Start Together.
+- **Next episode:** the next episode is found from the documented `/library/metadata/{show}/allLeaves` when the room's title is set. Its id stays server-side, and only its title is shown. `{next: true}` switches with `autoStart`, so the host's player starts everyone once all connected players are loaded. When a title ends, an "Up next" card runs a 10 s countdown on the host, which can be cancelled.
+- **Quality:** each viewer chooses Auto, Original, 1080p, 720p or 480p (remembered in `localStorage`). It becomes `videoBitrate`, `peakBitrate` and `videoResolution` on the transcode (documented params). Auto means full quality locally and 1080p/8 Mbps remotely.
+- **Chat & reactions:** over the room socket. Text is cleaned (control characters removed, whitespace collapsed, at most 500 characters) and always rendered as text, never HTML. Names come from the server, not the sender. Reactions are limited to a fixed set. There's a limit of 8 messages or reactions per 10 s per person, and the last 100 messages are kept in memory only (never saved to disk).
+
 **Originally planned for Phase 8 (kept for reference):**
 
 - Room ids / invite tokens: 128+ bits from `crypto.randomBytes`, unguessable. Rooms are in memory

@@ -4,7 +4,17 @@ import Hls from "hls.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { pickConnection, type Candidate } from "@/lib/client/probe";
 import { withToken } from "@/lib/client/tokenUrl";
-import type { PlaybackDecision, PlaybackStart, TimelineState } from "@/lib/plex/playback";
+import type { PlaybackDecision, PlaybackStart, Quality, TimelineState } from "@/lib/plex/playback";
+
+const QUALITY_KEY = "pt_quality";
+function readQuality(): Quality {
+  try {
+    const q = window.localStorage.getItem(QUALITY_KEY);
+    return q === "original" || q === "1080" || q === "720" || q === "480" ? q : "auto";
+  } catch {
+    return "auto";
+  }
+}
 
 export type StreamPhase =
   | { kind: "idle" }
@@ -43,6 +53,13 @@ export function usePlexStream(apiBase: string, knownDurationMs: number | null) {
   const startUrl = `${apiBase}/start`;
   /** Which server address this browser streams from (undefined = not probed yet). */
   const connectionRef = useRef<number | null | undefined>(undefined);
+  /** This browser's quality choice (remembered). */
+  const [quality, setQualityState] = useState<Quality>("auto");
+  const qualityRef = useRef<Quality>("auto");
+  useEffect(() => {
+    qualityRef.current = readQuality();
+    setQualityState(qualityRef.current);
+  }, []);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const sessionRef = useRef<string | null>(null);
@@ -132,6 +149,7 @@ export function usePlexStream(apiBase: string, knownDurationMs: number | null) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             offsetMs: Math.max(0, Math.round(fromMs)),
+            quality: qualityRef.current,
             ...(connectionRef.current !== null ? { connectionIndex: connectionRef.current } : {}),
           }),
         });
@@ -284,10 +302,27 @@ export function usePlexStream(apiBase: string, knownDurationMs: number | null) {
     if (wasPlaying) void videoRef.current?.play().catch(() => {});
   }, [load, mediaTimeMs, waitUntilPlayable]);
 
+  /** Changes quality (remembered in this browser) and reloads in place if playing. */
+  const setQuality = useCallback(
+    async (q: Quality) => {
+      qualityRef.current = q;
+      setQualityState(q);
+      try {
+        window.localStorage.setItem(QUALITY_KEY, q);
+      } catch {
+        /* not remembered, that's fine */
+      }
+      if (sessionRef.current) await reloadHere();
+    },
+    [reloadHere],
+  );
+
   return {
     videoRef,
     apiBase,
     reloadHere,
+    quality,
+    setQuality,
     phase,
     setPhase,
     load,

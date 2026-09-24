@@ -36,6 +36,7 @@ export type PlaybackOptions = {
    * with `offset` instead, and so do we.
    */
   offsetMs?: number;
+  quality?: Quality;
 };
 
 /** Validates an offset from a browser: 0 to 24 h, in ms. */
@@ -138,13 +139,28 @@ export function transcodeParams(opts: PlaybackOptions, sessionId: string): Recor
   };
   // Documented: "Offset from the start of the media (in seconds)".
   if (opts.offsetMs && opts.offsetMs > 0) params.offset = (Math.floor(opts.offsetMs / 100) / 10).toFixed(1);
-  if (opts.location === "wan") {
-    params.videoBitrate = "8000";
-    params.peakBitrate = "12000";
-    params.videoResolution = "1920x1080";
+  const cap = QUALITY_CAPS[opts.quality === "auto" || !opts.quality ? (opts.location === "wan" ? "1080" : "original") : opts.quality];
+  if (cap) {
+    params.videoBitrate = String(cap.videoKbps);
+    params.peakBitrate = String(cap.peakKbps);
+    params.videoResolution = cap.resolution;
   }
   return params;
 }
+
+/**
+ * Per-viewer quality. "auto" = full quality on a local connection, 1080p/8 Mbps
+ * remotely. A cap below the source's bitrate/resolution makes Plex transcode.
+ */
+export const QUALITIES = ["auto", "original", "1080", "720", "480"] as const;
+export type Quality = (typeof QUALITIES)[number];
+
+const QUALITY_CAPS: Record<Exclude<Quality, "auto">, { videoKbps: number; peakKbps: number; resolution: string } | null> = {
+  original: null,
+  "1080": { videoKbps: 8000, peakKbps: 12000, resolution: "1920x1080" },
+  "720": { videoKbps: 4000, peakKbps: 6000, resolution: "1280x720" },
+  "480": { videoKbps: 1500, peakKbps: 2500, resolution: "854x480" },
+};
 
 function transcodeHeaders(target: PmsTarget, sessionId: string): Record<string, string> {
   return {

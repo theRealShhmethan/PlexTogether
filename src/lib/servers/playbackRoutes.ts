@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { getConfig } from "@/lib/config";
 import { isSameOrigin, jsonError } from "@/lib/http/security";
-import { parseOffsetMs, startPlayback } from "@/lib/plex/playback";
+import { parseOffsetMs, QUALITIES, startPlayback } from "@/lib/plex/playback";
 import { getTracks, preferredAudio, setTracks } from "@/lib/plex/tracks";
 import { saveSession, type HostSession } from "@/lib/session/store";
 import type { PmsTarget } from "@/lib/plex/pms";
@@ -44,7 +44,12 @@ async function applyPreferredAudio(session: HostSession, target: PmsTarget, rati
 /** POST start: a new Plex session at `offsetMs`, streamed from the connection the browser chose. */
 export async function handleStart(request: Request, roomId: string | null): Promise<Response> {
   if (!isSameOrigin(request, getConfig().appOrigin)) return jsonError(403, "Cross-origin request rejected");
-  const body = (await request.json().catch(() => ({}))) as { offsetMs?: unknown; connectionIndex?: unknown };
+  const body = (await request.json().catch(() => ({}))) as {
+    offsetMs?: unknown;
+    connectionIndex?: unknown;
+    quality?: unknown;
+  };
+  const quality = z.enum(QUALITIES).catch("auto").parse(body?.quality);
   const viewer = await resolveViewer(roomId);
   if (viewer instanceof Response) return viewer;
   const { session, target, ratingKey, durationMs } = viewer;
@@ -52,10 +57,14 @@ export async function handleStart(request: Request, roomId: string | null): Prom
   const location = locationFor(conn);
   await applyPreferredAudio(session, target, ratingKey);
   try {
-    const start = await startPlayback(target, { ratingKey, location, offsetMs: parseOffsetMs(body?.offsetMs) }, conn.uri);
+    const start = await startPlayback(
+      target,
+      { ratingKey, location, offsetMs: parseOffsetMs(body?.offsetMs), quality },
+      conn.uri,
+    );
     session.playback = { sessionId: start.sessionId, ratingKey, durationMs, startedAt: Date.now() };
     saveSession(session);
-    return Response.json({ ...start, location }, { headers: noStore });
+    return Response.json({ ...start, location, quality }, { headers: noStore });
   } catch (err) {
     return pmsErrorResponse(err, "playback");
   }
