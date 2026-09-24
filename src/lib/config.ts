@@ -21,6 +21,9 @@ const EnvSchema = z.object({
   // SESSION_STORE_PATH so a restart doesn't sign you out. SECRET — .env.local only.
   SESSION_SECRET: z.string().min(1).optional(),
   SESSION_STORE_PATH: z.string().min(1).default(".data/sessions.enc.json"),
+  // Audio language chosen automatically the first time a title is played
+  // (comma-separated codes/names, matched case-insensitively). Manual choices always win.
+  PREFERRED_AUDIO_LANGUAGES: z.string().default("eng,en,english"),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 });
 
@@ -29,6 +32,7 @@ export type AppConfig = {
   productName: string;
   productVersion: string;
   authMode: PlexAuthMode;
+  preferredAudio: string[];
   /** null → sessions are memory-only. */
   sessionPersist: { key: Buffer; path: string } | null;
   isProduction: boolean;
@@ -45,6 +49,7 @@ export function getConfig(): AppConfig {
     productName: env.PLEX_PRODUCT_NAME,
     productVersion: "0.1.0",
     authMode: env.PLEX_AUTH_MODE,
+    preferredAudio: env.PREFERRED_AUDIO_LANGUAGES.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
     sessionPersist: env.SESSION_SECRET
       ? { key: parseSessionSecret(env.SESSION_SECRET), path: env.SESSION_STORE_PATH }
       : null,

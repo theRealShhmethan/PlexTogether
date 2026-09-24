@@ -127,3 +127,22 @@ export async function setTracks(
   if (!res.ok) throw new PlexApiError("pms:set-tracks", res.status, `Plex returned HTTP ${res.status}`);
   return { ok: true, tracks: await getTracks(target, ratingKey) };
 }
+
+/**
+ * Picks the audio track to switch to automatically, or null to leave it.
+ * Leaves it alone if the selected track already matches a preferred
+ * language; skips commentary tracks. `prefs` are lower-case language codes
+ * or names (e.g. "eng", "en", "english"), matched against Plex's languageCode
+ * and the track's label.
+ */
+export function preferredAudio(tracks: Tracks, prefs: string[]): number | null {
+  const matches = (t: Track) => {
+    const code = (t.language ?? "").toLowerCase();
+    const label = t.label.toLowerCase();
+    return prefs.some((p) => code === p || label.startsWith(p));
+  };
+  const selected = tracks.audio.find((t) => t.selected);
+  if (selected && matches(selected)) return null;
+  const candidate = tracks.audio.find((t) => matches(t) && !/commentary/i.test(t.label));
+  return candidate && candidate.id !== selected?.id ? candidate.id : null;
+}

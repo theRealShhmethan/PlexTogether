@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { pickConnection, type Candidate } from "@/lib/client/probe";
 import type { PmsTarget } from "./pms";
-import { getTracks, setTracks } from "./tracks";
+import { getTracks, preferredAudio, setTracks, type Tracks } from "./tracks";
 
 const target: PmsTarget = {
   client: { clientIdentifier: "cid", product: "PlexTogether", version: "0.1.0" },
@@ -103,5 +103,41 @@ describe("pickConnection (browser-side)", () => {
     expect(await pickConnection(cands, true)).toBeNull();
     expect((fn.mock.calls as unknown as [string][]).some(([u]) => u.startsWith("http://"))).toBe(false);
     expect(await pickConnection(cands, false)).toBe(0);
+  });
+});
+
+describe("preferredAudio", () => {
+  const prefs = ["eng", "en", "english"];
+  const tracks = (audio: Partial<Tracks["audio"][number]>[]): Tracks => ({
+    partId: 1,
+    subtitles: [],
+    audio: audio.map((a, i) => ({ id: i + 1, label: "Track", language: null, selected: false, ...a })),
+  });
+
+  it("switches from another language to English", () => {
+    const t = tracks([
+      { label: "Türkçe (AAC Stereo)", language: "tur", selected: true },
+      { label: "English (AC3 5.1)", language: "eng" },
+    ]);
+    expect(preferredAudio(t, prefs)).toBe(2);
+  });
+
+  it("leaves English alone, skips commentary, and does nothing without English", () => {
+    expect(preferredAudio(tracks([{ label: "English", language: "eng", selected: true }, { language: "eng" }]), prefs)).toBeNull();
+    expect(
+      preferredAudio(
+        tracks([
+          { label: "Français", language: "fre", selected: true },
+          { label: "English (Director's Commentary)", language: "eng" },
+          { label: "English (DTS 5.1)", language: "eng" },
+        ]),
+        prefs,
+      ),
+    ).toBe(3);
+    expect(preferredAudio(tracks([{ label: "Deutsch", language: "ger", selected: true }]), prefs)).toBeNull();
+  });
+
+  it("matches by label when Plex has no language code", () => {
+    expect(preferredAudio(tracks([{ label: "Español", selected: true }, { label: "English (AAC)" }]), prefs)).toBe(2);
   });
 });

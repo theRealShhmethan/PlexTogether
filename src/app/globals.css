@@ -933,9 +933,21 @@ details.stream-info[open] summary {
   flex-wrap: wrap;
 }
 
+/* The name may wrap under the badge, but never shrinks under its content
+   (min-width: auto) — so it can't overlap the status next to it. */
 .participants .name {
-  flex: 1;
-  min-width: 100px;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.participants .name + * {
+  margin-left: auto;
+}
+
+.badge {
+  display: inline-block;
+  white-space: nowrap;
+  vertical-align: 1px;
 }
 
 .dot {

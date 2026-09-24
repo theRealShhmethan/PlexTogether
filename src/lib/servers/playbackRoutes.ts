@@ -3,8 +3,9 @@ import { z } from "zod";
 import { getConfig } from "@/lib/config";
 import { isSameOrigin, jsonError } from "@/lib/http/security";
 import { parseOffsetMs, startPlayback } from "@/lib/plex/playback";
-import { getTracks, setTracks } from "@/lib/plex/tracks";
-import { saveSession } from "@/lib/session/store";
+import { getTracks, preferredAudio, setTracks } from "@/lib/plex/tracks";
+import { saveSession, type HostSession } from "@/lib/session/store";
+import type { PmsTarget } from "@/lib/plex/pms";
 import { noStore, pmsErrorResponse } from "./target";
 import { browserConnections, locationFor, playbackConnection, resolveViewer } from "./viewer";
 
@@ -12,6 +13,33 @@ import { browserConnections, locationFor, playbackConnection, resolveViewer } fr
  * Shared handlers for solo (/api/plex/playback/*) and room
  * (/api/rooms/<id>/playback/*) playback. `roomId` null = solo.
  */
+
+const MAX_TRACK_PREFS = 200;
+
+function rememberTrackPref(session: HostSession, ratingKey: string, how: "auto" | "manual") {
+  const prefs = { ...(session.trackPrefs ?? {}) };
+  delete prefs[ratingKey]; // re-insert so the newest are kept
+  prefs[ratingKey] = how;
+  const keys = Object.keys(prefs);
+  for (const k of keys.slice(0, Math.max(0, keys.length - MAX_TRACK_PREFS))) delete prefs[k];
+  session.trackPrefs = prefs;
+}
+
+/**
+ * The first time a viewer plays a title, switch to their preferred audio
+ * language (English by default) if it isn't already selected. Never after
+ * they've chosen tracks themselves. Best effort: failures don't block playback.
+ */
+async function applyPreferredAudio(session: HostSession, target: PmsTarget, ratingKey: string) {
+  if (session.trackPrefs?.[ratingKey]) return;
+  try {
+    const choice = preferredAudio(await getTracks(target, ratingKey), getConfig().preferredAudio);
+    if (choice !== null) await setTracks(target, ratingKey, { audioStreamId: choice });
+    rememberTrackPref(session, ratingKey, "auto");
+  } catch (err) {
+    console.warn(`[tracks] couldn't apply the preferred audio language: ${err instanceof Error ? err.message : "error"}`);
+  }
+}
 
 /** POST start: a new Plex session at `offsetMs`, streamed from the connection the browser chose. */
 export async function handleStart(request: Request, roomId: string | null): Promise<Response> {
@@ -22,6 +50,7 @@ export async function handleStart(request: Request, roomId: string | null): Prom
   const { session, target, ratingKey, durationMs } = viewer;
   const conn = playbackConnection(session, body?.connectionIndex);
   const location = locationFor(conn);
+  await applyPreferredAudio(session, target, ratingKey);
   try {
     const start = await startPlayback(target, { ratingKey, location, offsetMs: parseOffsetMs(body?.offsetMs) }, conn.uri);
     session.playback = { sessionId: start.sessionId, ratingKey, durationMs, startedAt: Date.now() };
@@ -76,6 +105,8 @@ export async function handleSetTracks(request: Request, roomId: string | null): 
   try {
     const result = await setTracks(viewer.target, viewer.ratingKey, body.data);
     if (!result.ok) return jsonError(400, result.error);
+    rememberTrackPref(viewer.session, viewer.ratingKey, "manual");
+    saveSession(viewer.session);
     return Response.json(result.tracks, { headers: noStore });
   } catch (err) {
     return pmsErrorResponse(err, "the track selection");

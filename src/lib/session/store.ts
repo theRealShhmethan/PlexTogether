@@ -46,6 +46,11 @@ export type HostSession = {
   selectedServer?: SelectedServer;
   /** Movie/episode picked for the watch party (on selectedServer). */
   selectedItem?: LibraryItem;
+  /**
+   * Per title (ratingKey): "manual" once this viewer picked tracks themselves
+   * (never auto-switch again), "auto" once we auto-selected their language.
+   */
+  trackPrefs?: Record<string, "auto" | "manual">;
   /** The host's current Plex playback session, if any. */
   playback?: { sessionId: string; ratingKey: string; durationMs: number | null; startedAt: number };
 };
