@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { withToken } from "@/lib/client/tokenUrl";
-import { reportTimeline, startPlayback, transcodeParams } from "./playback";
+import { parseOffsetMs, reportTimeline, startPlayback, transcodeParams } from "./playback";
 import type { PmsTarget } from "./pms";
 
 const target: PmsTarget = {
@@ -61,6 +61,11 @@ describe("transcodeParams", () => {
       videoBitrate: "8000",
       videoResolution: "1920x1080",
     });
+  });
+
+  it("starts the transcode at the requested offset (seconds, as documented)", () => {
+    expect(transcodeParams({ ratingKey: "70", location: "lan", offsetMs: 1_263_456 }, "s").offset).toBe("1263.4");
+    expect(transcodeParams({ ratingKey: "70", location: "lan", offsetMs: 0 }, "s").offset).toBeUndefined();
   });
 
   it("rejects non-numeric ids", () => {
@@ -126,5 +131,15 @@ describe("withToken", () => {
     );
     expect(withToken("https://cdn.example.com/segment.ts", origin, "T")).not.toContain("X-Plex-Token");
     expect(withToken("https://10-0-0-2.abc.plex.direct:443/x", origin, "T")).not.toContain("X-Plex-Token");
+  });
+});
+
+describe("parseOffsetMs", () => {
+  it("clamps and rejects junk", () => {
+    expect(parseOffsetMs(5000)).toBe(5000);
+    expect(parseOffsetMs(-5)).toBe(0);
+    expect(parseOffsetMs("5000")).toBe(0);
+    expect(parseOffsetMs(Number.NaN)).toBe(0);
+    expect(parseOffsetMs(1e12)).toBe(86_400_000);
   });
 });

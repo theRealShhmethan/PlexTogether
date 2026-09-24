@@ -456,3 +456,105 @@ a.button {
 .sync.ok {
   color: #4caf6a;
 }
+
+/* ---------- custom player controls ---------- */
+
+.video-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.video-box.hidden {
+  display: none;
+}
+
+.video-box .video {
+  border-radius: 0;
+}
+
+.video-box:fullscreen {
+  border-radius: 0;
+  justify-content: center;
+}
+
+.video-box:fullscreen .video {
+  flex: 1;
+  aspect-ratio: auto;
+  min-height: 0;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #0d0f12;
+}
+
+.ctl {
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 1.1rem;
+  cursor: pointer;
+  width: 2em;
+  flex-shrink: 0;
+}
+
+.ctl:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.controls .seek {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.controls .volume {
+  width: 80px;
+  accent-color: var(--accent);
+}
+
+.controls .time {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ---------- permissions ---------- */
+
+.permissions {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.permissions th,
+.permissions td {
+  text-align: left;
+  padding: 8px 4px;
+  border-top: 1px solid var(--border);
+}
+
+.permissions th {
+  color: var(--muted);
+  font-weight: normal;
+  font-size: 0.9rem;
+}
+
+.permissions input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.small-button {
+  padding: 5px 10px;
+  font-size: 0.85rem;
+}

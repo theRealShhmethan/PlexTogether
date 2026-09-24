@@ -6,6 +6,7 @@ import { useState } from "react";
 import { postJson } from "@/lib/client/api";
 import type { PublicParticipant, PublicRoom } from "@/lib/rooms/protocol";
 import { driftLabel } from "@/lib/sync/drift";
+import { PermissionsPanel } from "./PermissionsPanel";
 import { RoomPlayer } from "./RoomPlayer";
 import { useRoomSocket, type SocketStatus } from "./useRoomSocket";
 
@@ -22,11 +23,11 @@ function StatusLine({ status, rttMs }: { status: SocketStatus; rttMs: number | n
   return null;
 }
 
-function SyncCell({ p, playing }: { p: PublicParticipant; playing: boolean }) {
+function SyncCell({ p, room }: { p: PublicParticipant; room: PublicRoom }) {
   if (!p.playerReady) return <span className="muted small">{p.connected ? "no video yet" : ""}</span>;
   if (p.buffering) return <span className="error small">buffering…</span>;
-  if (p.role === "host") return <span className="muted small">in control</span>;
-  if (!playing) return <span className="muted small">video loaded</span>;
+  if (room.playback.by === p.id && room.playback.status !== "idle") return <span className="muted small">setting the pace</span>;
+  if (room.playback.status !== "playing") return <span className="muted small">video loaded</span>;
   return <span className={p.driftMs !== null && Math.abs(p.driftMs) < 250 ? "sync ok small" : "sync small"}>{driftLabel(p.driftMs)}</span>;
 }
 
@@ -121,8 +122,12 @@ export function RoomView({
       <section className="panel">
         <RoomPlayer
           roomId={room.id}
+          me={room.you}
           isHost={isHost}
+          permissions={me?.permissions ?? { playPause: false, seek: false }}
           playback={room.playback}
+          durationMs={room.durationMs}
+          nameOf={(id) => room.participants.find((p) => p.id === id)?.name ?? null}
           serverNow={serverNow}
           rttMs={rttMs}
           send={send}
@@ -143,7 +148,7 @@ export function RoomView({
                 {p.id === room.you && <span className="muted"> (you)</span>}
                 {p.role === "host" && <span className="badge">host</span>}
               </span>
-              <SyncCell p={p} playing={room.playback.status === "playing"} />
+              <SyncCell p={p} room={room} />
               <span className={p.ready ? "ready yes" : "ready"}>{p.ready ? "Ready" : "Not ready"}</span>
             </li>
           ))}
@@ -160,6 +165,8 @@ export function RoomView({
         </div>
         <p className="muted small">{startHint} Loading the video marks you ready.</p>
       </section>
+
+      {isHost && <PermissionsPanel room={room} send={send} disabled={status !== "open"} />}
 
       <div className="row">
         <button className="button secondary" onClick={() => void endOrLeave()} disabled={busy}>

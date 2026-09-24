@@ -15,9 +15,13 @@ export type PublicParticipant = {
   /** Player loaded and able to follow playback. */
   playerReady: boolean;
   buffering: boolean;
-  /** Last reported distance from the host (ms, + = ahead); null if not playing. */
+  /** Last reported distance from the room's reference player (ms, + = ahead); null if not playing. */
   driftMs: number | null;
+  /** What this participant may do (the host can always do everything). */
+  permissions: Permissions;
 };
+
+export type Permissions = { playPause: boolean; seek: boolean };
 
 export type PublicRoom = {
   id: string;
@@ -29,8 +33,9 @@ export type PublicRoom = {
   expiresAt: number;
   /** The viewer's own participant id. */
   you: string;
-  /** The room's playback, as set by the host. */
+  /** The room's playback: who last played/paused/seeked, where, and when. */
   playback: PlaybackAnchor;
+  durationMs: number | null;
 };
 
 const PositionMs = z.number().finite().min(0).max(24 * 60 * 60 * 1000);
@@ -39,15 +44,23 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ready"), ready: z.boolean() }),
   // Round-trip timing for clock-offset estimates. `t` is the client's Date.now().
   z.object({ type: z.literal("ping"), t: z.number().finite() }),
-  // Host only: what the host's player just did. `latencyMs` ≈ one-way delay, to back-date the anchor.
+  // What this participant's player just did (allowed per their permissions).
+  // `latencyMs` ≈ one-way delay, used to back-date the anchor.
   z.object({
-    type: z.literal("host"),
+    type: z.literal("control"),
     action: z.enum(["play", "pause", "seek", "tick"]),
     positionMs: PositionMs,
     latencyMs: z.number().finite().min(0).max(5000),
   }),
   // Host only: everyone starts together from `positionMs`, a moment from now.
   z.object({ type: z.literal("start"), positionMs: PositionMs }),
+  // Host only: a guest's permissions ("*" = every guest).
+  z.object({
+    type: z.literal("permissions"),
+    participantId: z.string().min(1).max(64),
+    playPause: z.boolean(),
+    seek: z.boolean(),
+  }),
   // Anyone: their player's state, for sync display (and Phase 8 buffering).
   z.object({
     type: z.literal("status"),

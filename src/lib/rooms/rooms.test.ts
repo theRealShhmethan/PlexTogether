@@ -201,42 +201,79 @@ describe("playback sync over sockets", () => {
     if (!j.ok) throw new Error();
     const host = await connect(r.room.id, `pt_session=${session.id}`);
     const guest = await connect(r.room.id, `pt_guest=${j.secret}`);
-    return { room: r.room, host, guest };
+    return { room: r.room, host, guest, guestId: j.participant.id };
   }
   const lastPlayback = (c: Client) =>
     [...c.messages].reverse().find((m): m is Extract<ServerMessage, { type: "playback" }> => m.type === "playback")
       ?.playback;
+  const control = (c: Client, action: string, positionMs: number, latencyMs = 0) =>
+    c.ws.send(JSON.stringify({ type: "control", action, positionMs, latencyMs }));
 
-  it("lets only the host control playback", async () => {
-    const { host, guest } = await setup();
-    guest.ws.send(JSON.stringify({ type: "host", action: "pause", positionMs: 5000, latencyMs: 0 }));
-    await until(() => guest.messages.find((m) => m.type === "error" && /Only the host/.test(m.message)));
-    expect(lastPlayback(host)).toBeUndefined();
-
+  it("records who acted, back-dated by their latency", async () => {
+    const { room, host, guest } = await setup();
     const before = Date.now();
-    host.ws.send(JSON.stringify({ type: "host", action: "pause", positionMs: 61_000, latencyMs: 40 }));
+    control(host, "pause", 61_000, 40);
     const pb = await until(() => lastPlayback(guest));
-    expect(pb).toMatchObject({ status: "paused", positionMs: 61_000 });
-    // Back-dated by the host's one-way latency.
+    expect(pb).toMatchObject({ status: "paused", positionMs: 61_000, by: room.hostParticipantId, seq: 1 });
     expect(pb.anchorServerTime).toBeLessThanOrEqual(Date.now() - 40);
     expect(pb.anchorServerTime).toBeGreaterThanOrEqual(before - 40);
     host.ws.close();
     guest.ws.close();
   });
 
-  it("schedules Start Together a moment ahead, and ticks never un-pause", async () => {
-    const { room, host, guest } = await setup();
+  it("lets guests pause and skip by default, and the host can lock them out", async () => {
+    const { room, host, guest, guestId } = await setup();
+    control(guest, "seek", 90_000);
+    await until(() => (lastPlayback(host)?.by === guestId ? true : undefined));
+
+    // A guest can't change permissions…
+    guest.ws.send(JSON.stringify({ type: "permissions", participantId: guestId, playPause: true, seek: true }));
+    await until(() => guest.messages.find((m) => m.type === "error" && /Only the host/.test(m.message)));
+
+    // …the host can.
+    host.ws.send(JSON.stringify({ type: "permissions", participantId: guestId, playPause: true, seek: false }));
+    await until(() => (lastState(guest)?.participants.find((p) => p.id === guestId)?.permissions.seek === false ? true : undefined));
+    control(guest, "seek", 10_000);
+    await until(() => guest.messages.find((m) => m.type === "error" && /hasn't allowed/.test(m.message)));
+    expect(getRoom(room.id)!.playback.positionMs).toBe(90_000);
+    control(guest, "pause", 95_000); // still allowed
+    await until(() => (lastPlayback(host)?.positionMs === 95_000 ? true : undefined));
+
+    // "*" applies to every guest.
+    host.ws.send(JSON.stringify({ type: "permissions", participantId: "*", playPause: false, seek: false }));
+    await until(() => (lastState(host)?.participants.find((p) => p.id === guestId)?.permissions.playPause === false ? true : undefined));
+    host.ws.close();
+    guest.ws.close();
+  });
+
+  it("schedules Start Together a moment ahead for everyone (host only)", async () => {
+    const { host, guest } = await setup();
+    guest.ws.send(JSON.stringify({ type: "start", positionMs: 0 }));
+    await until(() => guest.messages.find((m) => m.type === "error" && /Only the host can start/.test(m.message)));
+
     const before = Date.now();
     host.ws.send(JSON.stringify({ type: "start", positionMs: 0 }));
     const pb = await until(() => lastPlayback(guest));
-    expect(pb.status).toBe("playing");
+    expect(pb).toMatchObject({ status: "playing", by: null });
     expect(pb.anchorServerTime - before).toBeGreaterThanOrEqual(2000);
+    host.ws.close();
+    guest.ws.close();
+  });
 
-    host.ws.send(JSON.stringify({ type: "host", action: "pause", positionMs: 3000, latencyMs: 0 }));
+  it("only takes ticks from whoever sets the pace, and ticks never un-pause", async () => {
+    const { room, host, guest } = await setup();
+    control(host, "play", 1000);
+    await until(() => (lastPlayback(guest)?.status === "playing" ? true : undefined));
+    control(guest, "tick", 50_000); // not the reference player → ignored
+    control(host, "tick", 4000);
+    await until(() => (lastPlayback(guest)?.positionMs === 4000 ? true : undefined));
+    expect(getRoom(room.id)!.playback.positionMs).toBe(4000);
+
+    control(host, "pause", 5000);
     await until(() => (lastPlayback(guest)?.status === "paused" ? true : undefined));
-    host.ws.send(JSON.stringify({ type: "host", action: "tick", positionMs: 9000, latencyMs: 0 }));
+    control(host, "tick", 9000);
     await new Promise((r) => setTimeout(r, 100));
-    expect(getRoom(room.id)!.playback).toMatchObject({ status: "paused", positionMs: 3000 });
+    expect(getRoom(room.id)!.playback).toMatchObject({ status: "paused", positionMs: 5000 });
     host.ws.close();
     guest.ws.close();
   });
@@ -249,7 +286,6 @@ describe("playback sync over sockets", () => {
       return p?.playerReady ? p : undefined;
     });
     expect(lexi).toMatchObject({ playerReady: true, buffering: false });
-    // Drift-only changes are coalesced (≤1 broadcast/s).
     await until(() => (lastState(host)?.participants.find((x) => x.name === "Lexi")?.driftMs === 82 ? true : undefined), 3000);
     host.ws.close();
     guest.ws.close();

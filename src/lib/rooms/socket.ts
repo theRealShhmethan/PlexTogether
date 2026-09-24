@@ -7,8 +7,9 @@ import {
   attachSocket,
   detachSocket,
   getRoom,
-  hostPlayback,
+  controlPlayback,
   resolveGuest,
+  setPermissions,
   setReady,
   startTogether,
   updateStatus,
@@ -111,15 +112,21 @@ export function handleRoomUpgrade(req: IncomingMessage, socket: Duplex, head: Bu
         case "status":
           updateStatus(roomId.data, participantId, msg.data);
           break;
-        case "host":
-        case "start": {
-          // Only the host controls playback.
-          if (getRoom(roomId.data)?.hostParticipantId !== participantId) {
-            conn.send({ type: "error", message: "Only the host controls playback" });
-            break;
+        case "control":
+          if (!controlPlayback(roomId.data, participantId, msg.data.action, msg.data.positionMs, msg.data.latencyMs)) {
+            conn.send({ type: "error", message: "The host hasn't allowed you to do that" });
           }
-          if (msg.data.type === "start") startTogether(roomId.data, msg.data.positionMs);
-          else hostPlayback(roomId.data, msg.data.action, msg.data.positionMs, msg.data.latencyMs);
+          break;
+        case "start":
+          if (!startTogether(roomId.data, participantId, msg.data.positionMs)) {
+            conn.send({ type: "error", message: "Only the host can start the watch party" });
+          }
+          break;
+        case "permissions": {
+          const { participantId: target, playPause, seek } = msg.data;
+          if (!setPermissions(roomId.data, participantId, target, { playPause, seek })) {
+            conn.send({ type: "error", message: "Only the host can change permissions" });
+          }
           break;
         }
       }

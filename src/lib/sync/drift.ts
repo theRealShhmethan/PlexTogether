@@ -1,10 +1,11 @@
 /**
- * Playback sync maths (host-authoritative).
+ * Playback sync maths (shared control: whoever acted last sets the pace).
  *
  * The server keeps the room's playback as an anchor: "at server time T the
- * host was at position P, playing or paused". Anyone can then compute where
- * playback should be now. Guests compare that with their own player and
- * correct as follows (thresholds from the project brief; tune after testing):
+ * room was at position P, playing or paused", plus who set it. Whoever acted
+ * last sets the pace; everyone else computes where playback should be now,
+ * compares that with their own player and corrects as follows (thresholds
+ * from the project brief; tune after testing):
  *
  *   |drift| <  250 ms   → leave it
  *   250 ms – 2 s        → nudge playbackRate (±5% up to 750 ms, ±10% beyond),
@@ -18,6 +19,10 @@ export type PlaybackAnchor = {
   positionMs: number;
   /** Server time (ms since epoch) the position refers to. May be in the future for a scheduled start. */
   anchorServerTime: number;
+  /** Participant whose player is the reference; null for a scheduled Start Together (everyone follows). */
+  by: string | null;
+  /** Increments on every change. */
+  seq: number;
 };
 
 export const DRIFT = {

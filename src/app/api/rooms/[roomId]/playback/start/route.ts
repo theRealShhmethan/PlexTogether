@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { getConfig } from "@/lib/config";
 import { isSameOrigin, jsonError } from "@/lib/http/security";
-import { startPlayback } from "@/lib/plex/playback";
+import { parseOffsetMs, startPlayback } from "@/lib/plex/playback";
 import { getRoom, resolveGuest } from "@/lib/rooms/hub";
 import { RoomIdSchema } from "@/lib/rooms/protocol";
 import { selectServer } from "@/lib/servers/service";
@@ -51,7 +51,11 @@ export async function POST(request: Request, ctx: RouteContext<"/api/rooms/[room
     }
     const target = targetFor(session)!;
     const location = session.selectedServer!.connection.local ? "lan" : "wan";
-    const start = await startPlayback(target, { ratingKey: room.item.ratingKey, location });
+    const start = await startPlayback(target, {
+      ratingKey: room.item.ratingKey,
+      location,
+      offsetMs: parseOffsetMs(((await request.json().catch(() => ({}))) as { offsetMs?: unknown })?.offsetMs),
+    });
     session.playback = {
       sessionId: start.sessionId,
       ratingKey: room.item.ratingKey,

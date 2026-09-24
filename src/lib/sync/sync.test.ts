@@ -21,7 +21,7 @@ describe("ClockSync", () => {
 });
 
 describe("expectedPositionMs", () => {
-  const playing: PlaybackAnchor = { status: "playing", positionMs: 60_000, anchorServerTime: 1_000_000 };
+  const playing: PlaybackAnchor = { status: "playing", positionMs: 60_000, anchorServerTime: 1_000_000, by: null, seq: 1 };
 
   it("advances with server time while playing", () => {
     expect(expectedPositionMs(playing, 1_002_500)).toBe(62_500);

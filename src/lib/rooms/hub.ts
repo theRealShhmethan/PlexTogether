@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { PlaybackAnchor } from "@/lib/sync/drift";
-import type { PublicRoom, ServerMessage } from "./protocol";
+import type { Permissions, PublicRoom, ServerMessage } from "./protocol";
 
 /**
  * In-memory rooms (v0.1; lost on restart).
@@ -33,6 +33,7 @@ export type Participant = {
   playerReady: boolean;
   buffering: boolean;
   driftMs: number | null;
+  permissions: Permissions;
 };
 
 /** What the room plays. Identifies the item on the host's server; no tokens. */
@@ -138,11 +139,13 @@ export function publicRoom(room: Room, viewerId: string): PublicRoom {
         playerReady: p.playerReady,
         buffering: p.buffering,
         driftMs: p.driftMs,
+        permissions: p.permissions,
       })),
     createdAt: room.createdAt,
     expiresAt: room.expiresAt,
     you: viewerId,
     playback: room.playback,
+    durationMs: room.item.durationMs,
   };
 }
 
@@ -160,6 +163,8 @@ const newParticipant = (name: string, role: Participant["role"]): Participant =>
   playerReady: false,
   buffering: false,
   driftMs: null,
+  // Guests may pause and skip by default; the host can change it per guest.
+  permissions: { playPause: true, seek: true },
 });
 
 export function createRoom(opts: {
@@ -183,7 +188,7 @@ export function createRoom(opts: {
     hostParticipantId: host.id,
     participants: new Map([[host.id, host]]),
     item: opts.item,
-    playback: { status: "idle", positionMs: 0, anchorServerTime: now },
+    playback: { status: "idle", positionMs: 0, anchorServerTime: now, by: null, seq: 0 },
     createdAt: now,
     expiresAt: now + ROOM_TTL_MS,
   };
@@ -229,33 +234,68 @@ export function setReady(roomId: string, participantId: string, ready: boolean):
   broadcast(room);
 }
 
-// ---------- playback (host-authoritative) ----------
+// ---------- playback ----------
 
-export type HostAction = "play" | "pause" | "seek" | "tick";
+export type ControlAction = "play" | "pause" | "seek" | "tick";
 
-/**
- * Applies the host player's action. The anchor is back-dated by the host's
- * estimated one-way latency, so "position P at server time T" refers to when
- * the host was actually there.
- */
-export function hostPlayback(roomId: string, action: HostAction, positionMs: number, latencyMs: number): void {
-  const room = getRoom(roomId);
-  if (!room) return;
-  const anchorServerTime = Date.now() - latencyMs;
-  const current = room.playback.status;
-  // A tick only re-anchors ongoing playback (it corrects the host's own drift); it never un-pauses.
-  if (action === "tick" && current !== "playing") return;
-  const status = action === "pause" ? "paused" : action === "seek" ? (current === "idle" ? "paused" : current) : "playing";
-  room.playback = { status, positionMs, anchorServerTime };
-  broadcastPlayback(room);
+/** SECURITY: the server enforces permissions; the browser only hides controls. */
+export function canControl(room: Room, participantId: string, action: ControlAction): boolean {
+  if (participantId === room.hostParticipantId) return true;
+  const p = room.participants.get(participantId);
+  if (!p) return false;
+  if (action === "tick") return room.playback.by === participantId;
+  return action === "seek" ? p.permissions.seek : p.permissions.playPause;
 }
 
-/** Everyone starts together from `positionMs`, START_DELAY_MS from now. */
-export function startTogether(roomId: string, positionMs: number): void {
+/**
+ * Applies a participant's play/pause/seek. Their player becomes the reference
+ * everyone else follows. The anchor is back-dated by their estimated one-way
+ * latency, so "position P at server time T" refers to when they were actually
+ * there. Returns false if they aren't allowed.
+ */
+export function controlPlayback(
+  roomId: string,
+  participantId: string,
+  action: ControlAction,
+  positionMs: number,
+  latencyMs: number,
+): boolean {
   const room = getRoom(roomId);
-  if (!room) return;
-  room.playback = { status: "playing", positionMs, anchorServerTime: Date.now() + START_DELAY_MS };
+  if (!room || !canControl(room, participantId, action)) return false;
+  const current = room.playback;
+  // A tick only refreshes ongoing playback from the reference player; it never un-pauses.
+  if (action === "tick" && (current.status !== "playing" || current.by !== participantId)) return true;
+  const status =
+    action === "pause" ? "paused" : action === "seek" ? (current.status === "idle" ? "paused" : current.status) : "playing";
+  room.playback = { status, positionMs, anchorServerTime: Date.now() - latencyMs, by: participantId, seq: current.seq + 1 };
   broadcastPlayback(room);
+  return true;
+}
+
+/** Host only: everyone starts together from `positionMs`, START_DELAY_MS from now. */
+export function startTogether(roomId: string, participantId: string, positionMs: number): boolean {
+  const room = getRoom(roomId);
+  if (!room || participantId !== room.hostParticipantId) return false;
+  room.playback = {
+    status: "playing",
+    positionMs,
+    anchorServerTime: Date.now() + START_DELAY_MS,
+    by: null,
+    seq: room.playback.seq + 1,
+  };
+  broadcastPlayback(room);
+  return true;
+}
+
+/** Host only: sets a guest's permissions, or every guest's with "*". */
+export function setPermissions(roomId: string, byId: string, targetId: string, permissions: Permissions): boolean {
+  const room = getRoom(roomId);
+  if (!room || byId !== room.hostParticipantId) return false;
+  for (const p of room.participants.values()) {
+    if (p.role === "guest" && (targetId === "*" || p.id === targetId)) p.permissions = { ...permissions };
+  }
+  broadcast(room);
+  return true;
 }
 
 export function updateStatus(

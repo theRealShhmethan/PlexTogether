@@ -1,6 +1,6 @@
 import { getConfig } from "@/lib/config";
 import { isSameOrigin, jsonError } from "@/lib/http/security";
-import { startPlayback } from "@/lib/plex/playback";
+import { parseOffsetMs, startPlayback } from "@/lib/plex/playback";
 import { noStore, pmsErrorResponse, requireSelectedServer } from "@/lib/servers/target";
 import { saveSession } from "@/lib/session/store";
 
@@ -21,8 +21,10 @@ export async function POST(request: Request) {
   if (!item) return jsonError(409, "Pick a movie or episode on the Browse page first.");
 
   const location = session.selectedServer!.connection.local ? "lan" : "wan";
+  const body = (await request.json().catch(() => ({}))) as { offsetMs?: unknown };
+  const offsetMs = parseOffsetMs(body?.offsetMs);
   try {
-    const start = await startPlayback(target, { ratingKey: item.ratingKey, location });
+    const start = await startPlayback(target, { ratingKey: item.ratingKey, location, offsetMs });
     session.playback = {
       sessionId: start.sessionId,
       ratingKey: item.ratingKey,

@@ -29,7 +29,19 @@ export type PlaybackOptions = {
   ratingKey: string;
   /** "lan" lets Plex copy/transcode at full quality; "wan" caps bitrate. */
   location: "lan" | "wan";
+  /**
+   * Where the transcode starts (ms into the media). PLEX NOTE: the transcoder
+   * produces the stream in order from this point, so jumping far ahead inside
+   * a session stalls until it catches up. Plex clients start a new session
+   * with `offset` instead, and so do we.
+   */
+  offsetMs?: number;
 };
+
+/** Validates an offset from a browser: 0 to 24 h, in ms. */
+export function parseOffsetMs(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(Math.max(0, value), 86_400_000) : 0;
+}
 
 export type StreamDecision = {
   kind: "video" | "audio" | "subtitle";
@@ -120,6 +132,8 @@ export function transcodeParams(opts: PlaybackOptions, sessionId: string): Recor
     transcodeSessionId: sessionId,
     session: sessionId,
   };
+  // Documented: "Offset from the start of the media (in seconds)".
+  if (opts.offsetMs && opts.offsetMs > 0) params.offset = (Math.floor(opts.offsetMs / 100) / 10).toFixed(1);
   if (opts.location === "wan") {
     params.videoBitrate = "8000";
     params.peakBitrate = "12000";
