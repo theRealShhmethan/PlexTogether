@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { PublicConnection, PublicProbe, PublicSelection, PublicServer } from "@/lib/servers/service";
 
@@ -19,6 +20,18 @@ const REASONS: Record<string, string> = {
 
 function describeConnection(c: PublicConnection): string {
   return `${c.kind} ${c.protocol}${c.ipv6 ? " (IPv6)" : ""}`;
+}
+
+function ProbeList({ probes }: { probes: PublicProbe[] }) {
+  return (
+    <ul className="muted small">
+      {probes.map((p, i) => (
+        <li key={i}>
+          {describeConnection(p)}: {p.ok ? `ok (${p.latencyMs} ms)` : REASONS[p.reason]}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 async function readError(res: Response): Promise<{ message: string; probes: PublicProbe[] }> {
@@ -44,6 +57,8 @@ export function ServerPicker() {
   const [selected, setSelected] = useState<PublicSelection | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selectError, setSelectError] = useState<{ message: string; probes: PublicProbe[] } | null>(null);
+  // Every connection's result from the last successful check (diagnostics).
+  const [lastProbes, setLastProbes] = useState<PublicProbe[]>([]);
 
   const apply = useCallback((r: LoadResult) => {
     setList(r.list);
@@ -68,6 +83,7 @@ export function ServerPicker() {
   async function select(serverId: string) {
     setBusyId(serverId);
     setSelectError(null);
+    setLastProbes([]);
     try {
       const res = await fetch("/api/plex/servers/select", {
         method: "POST",
@@ -78,8 +94,9 @@ export function ServerPicker() {
         setSelectError(await readError(res));
         return;
       }
-      const body = (await res.json()) as { selected: PublicSelection };
+      const body = (await res.json()) as { selected: PublicSelection; probes: PublicProbe[] };
       setSelected(body.selected);
+      setLastProbes(body.probes);
     } catch {
       setSelectError({ message: "Network error while checking the server.", probes: [] });
     } finally {
@@ -99,21 +116,15 @@ export function ServerPicker() {
             {selected.version ? ` · PMS ${selected.version}` : ""}
             {!selected.owned && selected.ownerName ? ` · shared by ${selected.ownerName}` : ""}
           </span>
+          {lastProbes.length > 1 && <ProbeList probes={lastProbes} />}
+          <Link href="/browse">Browse library →</Link>
         </div>
       )}
 
       {selectError && (
         <div className="status bad">
           <strong className="error">{selectError.message}</strong>
-          {selectError.probes.length > 0 && (
-            <ul className="muted">
-              {selectError.probes.map((p, i) => (
-                <li key={i}>
-                  {describeConnection(p)}: {p.ok ? `ok (${p.latencyMs} ms)` : REASONS[p.reason]}
-                </li>
-              ))}
-            </ul>
-          )}
+          {selectError.probes.length > 0 && <ProbeList probes={selectError.probes} />}
         </div>
       )}
 

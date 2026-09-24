@@ -45,6 +45,7 @@ export async function listServers(session: HostSession): Promise<PlexServer[]> {
   // Drop a selection whose server has disappeared from the account.
   if (session.selectedServer && !servers.some((s) => s.id === session.selectedServer!.serverId)) {
     session.selectedServer = undefined;
+    session.selectedItem = undefined;
   }
   saveSession(session);
   return servers;
@@ -81,6 +82,8 @@ export async function selectServer(session: HostSession, serverId: string): Prom
     latencyMs: best.latencyMs,
     checkedAt: Date.now(),
   };
+  // An item picked on a different server doesn't exist on this one.
+  if (session.selectedServer?.serverId !== selection.serverId) session.selectedItem = undefined;
   session.selectedServer = selection;
   saveSession(session);
   return { ok: true, selection, probes };

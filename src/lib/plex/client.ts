@@ -55,6 +55,9 @@ export async function plexRequest<T>(
     res = await fetch(url, {
       ...init,
       cache: "no-store",
+      // SECURITY: fetch forwards custom headers such as X-Plex-Token across
+      // cross-origin redirects, so never follow one.
+      redirect: "error",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (err) {

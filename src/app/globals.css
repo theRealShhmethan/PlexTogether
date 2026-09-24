@@ -140,3 +140,171 @@ a {
   align-self: center;
   flex-shrink: 0;
 }
+
+/* ---------- library browsing ---------- */
+
+.wide {
+  width: min(1100px, calc(100vw - 32px));
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.link-button {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.search {
+  display: flex;
+  gap: 8px;
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 1rem;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tab {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.poster-grid {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 16px;
+}
+
+.poster {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.poster img,
+.poster-fallback {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--border);
+}
+
+.poster-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.poster:hover img,
+.poster:focus-visible img {
+  outline: 2px solid var(--accent);
+}
+
+.poster-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.poster-sub {
+  font-size: 0.85rem;
+}
+
+.detail {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.detail-poster {
+  width: 200px;
+  max-width: 100%;
+  border-radius: 8px;
+  align-self: flex-start;
+}
+
+.detail-body {
+  flex: 1;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.summary {
+  max-width: 65ch;
+}
+
+.season h3 {
+  margin: 12px 0 6px;
+}
+
+.episode-list {
+  list-style: none;
+}
+
+.episode {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.episode .button {
+  align-self: center;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 0.9rem;
+}

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { PlexAuthMode } from "@/lib/plex/auth";
+import type { LibraryItem } from "@/lib/plex/library";
 import type { DeviceKey } from "@/lib/plex/deviceKey";
 import type { PlexConnection, PlexServer } from "@/lib/plex/resources";
 import type { PlexUser } from "@/lib/plex/schemas";
@@ -34,6 +35,8 @@ export type HostSession = {
   /** Last server list from plex.tv (contains per-server access tokens). */
   servers?: PlexServer[];
   selectedServer?: SelectedServer;
+  /** Movie/episode picked for the watch party (on selectedServer). */
+  selectedItem?: LibraryItem;
 };
 
 /**

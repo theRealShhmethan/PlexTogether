@@ -11,7 +11,7 @@ media; PlexTogether handles rooms and synchronization.
 | 1 | Project foundation | ✅ done |
 | 2 | Plex sign-in (PIN flow) | ✅ done — verified with a real account (Chrome, Windows) |
 | 3 | Server discovery + connectivity check | ✅ done — verified against a real PMS (Synology, 1.42.1) |
-| 4 | Library browsing | ⏳ not started |
+| 4 | Library browsing, search, pick an item | ✅ implemented, **needs a real-server test** |
 | 5 | Playback proof of concept | ⏳ not started |
 | 6 | Rooms / invites | ⏳ blocked on a guest-access decision (see below) |
 | 7 | Playback sync | ⏳ not started |
@@ -92,7 +92,8 @@ Target: host on Chrome/Edge (Windows), guest on Chrome (macOS). Safari is desira
 
 ## Current limitations
 
-- Sign-in and server selection only. No browsing, playback, rooms, or sync yet.
+- Sign-in, server selection and library browsing only. No playback, rooms, or sync yet.
+- Posters are fetched through PlexTogether (`/api/plex/image`, allowlisted Plex image paths only) so the server token never reaches the browser.
 - Connectivity is checked from the PlexTogether server, not the browser. On localhost these are the same machine; once hosted elsewhere, Phase 5 will also need a browser-side check.
 - Sessions are lost on restart. Single process only.
 - Remote guests need the app served over HTTPS at a public URL. Localhost only works for testing on your own machine.

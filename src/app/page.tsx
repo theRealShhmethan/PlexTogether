@@ -44,7 +44,7 @@ export default async function Home() {
       )}
 
       {user && <ServerPicker />}
-      {user && <p className="muted">Library browsing and watch parties are not built yet.</p>}
+      {user && <p className="muted">Playback and watch parties are not built yet.</p>}
     </>
   );
 }
