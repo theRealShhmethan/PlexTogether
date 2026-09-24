@@ -5,11 +5,12 @@ import { formatTime } from "@/lib/format/time";
 import type { LibraryItem } from "@/lib/plex/library";
 import { DecisionSummary } from "./DecisionSummary";
 import { PlayerControls } from "./PlayerControls";
+import { TrackMenu } from "./TrackMenu";
 import { usePlexStream } from "./usePlexStream";
 
 /** Solo host player for the watch-party pick (/watch). */
 export function Player({ item }: { item: LibraryItem }) {
-  const stream = usePlexStream("/api/plex/playback/start", item.durationMs);
+  const stream = usePlexStream("/api/plex/playback", item.durationMs);
   const { videoRef, phase, setPhase, load, videoEvents } = stream;
   const containerRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -56,6 +57,7 @@ export function Player({ item }: { item: LibraryItem }) {
           onTogglePlay={togglePlay}
           onSeek={(ms) => void seek(ms)}
           busyLabel={busy}
+          extra={<TrackMenu apiBase={stream.apiBase} onChanged={stream.reloadHere} />}
         />
       </div>
 

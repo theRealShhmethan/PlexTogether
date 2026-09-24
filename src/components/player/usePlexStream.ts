@@ -2,6 +2,7 @@
 
 import Hls from "hls.js";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { pickConnection, type Candidate } from "@/lib/client/probe";
 import { withToken } from "@/lib/client/tokenUrl";
 import type { PlaybackDecision, PlaybackStart, TimelineState } from "@/lib/plex/playback";
 
@@ -34,7 +35,14 @@ const NETWORK_RETRIES = 3;
  * SECURITY: the start endpoint returns a transient token; it's added only to
  * requests for the Plex server's own origin (withToken) and never stored.
  */
-export function usePlexStream(startUrl: string, knownDurationMs: number | null) {
+/**
+ * @param apiBase "/api/plex/playback" (solo) or "/api/rooms/<id>/playback"; provides
+ *   /start, /connections and /tracks.
+ */
+export function usePlexStream(apiBase: string, knownDurationMs: number | null) {
+  const startUrl = `${apiBase}/start`;
+  /** Which server address this browser streams from (undefined = not probed yet). */
+  const connectionRef = useRef<number | null | undefined>(undefined);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const sessionRef = useRef<string | null>(null);
@@ -106,12 +114,26 @@ export function usePlexStream(startUrl: string, knownDurationMs: number | null) 
       const seq = ++loadSeq.current;
       teardown();
       if (!opts.restart) setPhase({ kind: "starting" });
+      if (connectionRef.current === undefined) {
+        // Test the server's addresses from this browser; fall back to the server's choice.
+        try {
+          const r = await fetch(`${apiBase}/connections`);
+          const body = r.ok ? ((await r.json()) as { connections: Candidate[] }) : null;
+          connectionRef.current = body ? await pickConnection(body.connections, window.location.protocol === "https:") : null;
+        } catch {
+          connectionRef.current = null;
+        }
+        if (seq !== loadSeq.current) return false;
+      }
       let res: Response;
       try {
         res = await fetch(startUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ offsetMs: Math.max(0, Math.round(fromMs)) }),
+          body: JSON.stringify({
+            offsetMs: Math.max(0, Math.round(fromMs)),
+            ...(connectionRef.current !== null ? { connectionIndex: connectionRef.current } : {}),
+          }),
         });
       } catch {
         setPhase({ kind: "error", message: "Network error while starting playback." });
@@ -173,6 +195,7 @@ export function usePlexStream(startUrl: string, knownDurationMs: number | null) 
             if (recoveriesRef.current < 1) {
               recoveriesRef.current++;
               const at = baseMsRef.current + video.currentTime * 1000;
+              connectionRef.current = undefined; // the network changed: probe again
               reloadRef.current?.(at);
               return;
             }
@@ -196,7 +219,7 @@ export function usePlexStream(startUrl: string, knownDurationMs: number | null) 
       setPhase({ kind: "loaded", sessionId, decision, location });
       return true;
     },
-    [startUrl, teardown, knownDurationMs],
+    [apiBase, startUrl, teardown, knownDurationMs],
   );
 
   useEffect(() => {
@@ -252,8 +275,19 @@ export function usePlexStream(startUrl: string, knownDurationMs: number | null) 
     onEnded: () => report("stopped"),
   };
 
+  /** Restarts the stream where it is (e.g. after changing audio/subtitles), keeping play/pause. */
+  const reloadHere = useCallback(async () => {
+    const v = videoRef.current;
+    const wasPlaying = !!v && !v.paused;
+    if (!(await load(mediaTimeMs(), { restart: true }))) return;
+    await waitUntilPlayable();
+    if (wasPlaying) void videoRef.current?.play().catch(() => {});
+  }, [load, mediaTimeMs, waitUntilPlayable]);
+
   return {
     videoRef,
+    apiBase,
+    reloadHere,
     phase,
     setPhase,
     load,

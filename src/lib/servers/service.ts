@@ -79,6 +79,7 @@ export async function selectServer(session: HostSession, serverId: string): Prom
     version: best.version ?? server.version,
     accessToken: server.accessToken,
     connection: best.connection,
+    connections: server.connections,
     latencyMs: best.latencyMs,
     checkedAt: Date.now(),
   };

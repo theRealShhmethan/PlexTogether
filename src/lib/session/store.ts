@@ -75,7 +75,10 @@ export type SelectedServer = {
   version: string | null;
   /** SECURITY: PMS credential. Server-side only. */
   accessToken: string;
+  /** The connection that works from THIS server (used for our own PMS calls). */
   connection: PlexConnection;
+  /** Every connection Plex advertises; the browser picks the one it can reach for playback. */
+  connections?: PlexConnection[];
   latencyMs: number;
   checkedAt: number;
 };

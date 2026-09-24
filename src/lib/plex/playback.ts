@@ -199,7 +199,16 @@ export async function createTransientToken(target: PmsTarget): Promise<string> {
   return res.MediaContainer.token;
 }
 
-export async function startPlayback(target: PmsTarget, opts: PlaybackOptions): Promise<PlaybackStart> {
+/**
+ * @param playlistBaseUrl where the BROWSER will fetch the stream from — it may
+ * differ from target.baseUrl (the address that works from this server), e.g.
+ * when PlexTogether runs next to PMS but the viewer is elsewhere.
+ */
+export async function startPlayback(
+  target: PmsTarget,
+  opts: PlaybackOptions,
+  playlistBaseUrl: string = target.baseUrl,
+): Promise<PlaybackStart> {
   const sessionId = randomUUID();
   const params = transcodeParams(opts, sessionId);
 
@@ -217,7 +226,7 @@ export async function startPlayback(target: PmsTarget, opts: PlaybackOptions): P
 
   const transientToken = await createTransientToken(target);
   // The playlist URL carries no token; the player adds the transient one to each request.
-  const playlistUrl = pmsUrl(target, "/video/:/transcode/universal/start.m3u8", {
+  const playlistUrl = pmsUrl({ ...target, baseUrl: playlistBaseUrl }, "/video/:/transcode/universal/start.m3u8", {
     ...params,
     "X-Plex-Client-Identifier": target.client.clientIdentifier,
     "X-Plex-Product": target.client.product,

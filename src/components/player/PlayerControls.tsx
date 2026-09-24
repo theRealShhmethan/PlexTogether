@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useState, type ReactNode, type RefObject } from "react";
 import { formatTime } from "@/lib/format/time";
 
 type Props = {
@@ -13,6 +13,8 @@ type Props = {
   onSeek: ((ms: number) => void) | null;
   /** Shown instead of the time while a new stream is being prepared. */
   busyLabel?: string | null;
+  /** Extra controls (e.g. the audio/subtitle menu), placed before fullscreen. */
+  extra?: ReactNode;
 };
 
 /**
@@ -20,7 +22,16 @@ type Props = {
  * the current Plex session (which may start mid-movie) and seek inside it,
  * so seeking goes through our seek logic instead.
  */
-export function PlayerControls({ videoRef, containerRef, mediaTimeMs, durationMs, onTogglePlay, onSeek, busyLabel }: Props) {
+export function PlayerControls({
+  videoRef,
+  containerRef,
+  mediaTimeMs,
+  durationMs,
+  onTogglePlay,
+  onSeek,
+  busyLabel,
+  extra,
+}: Props) {
   const [now, setNow] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [paused, setPaused] = useState(true);
@@ -105,6 +116,7 @@ export function PlayerControls({ videoRef, containerRef, mediaTimeMs, durationMs
           v.muted = v.volume === 0;
         }}
       />
+      {extra}
       <button className="ctl" onClick={toggleFullscreen} aria-label="Fullscreen">
         ⛶
       </button>

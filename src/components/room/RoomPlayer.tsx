@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { DecisionSummary } from "@/components/player/DecisionSummary";
 import { PlayerControls } from "@/components/player/PlayerControls";
+import { TrackMenu } from "@/components/player/TrackMenu";
 import { usePlexStream } from "@/components/player/usePlexStream";
 import { SignInButton } from "@/components/SignInButton";
 import type { ClientMessage, Permissions } from "@/lib/rooms/protocol";
@@ -71,7 +72,7 @@ type Props = {
  */
 export function RoomPlayer(props: Props) {
   const { roomId, me, isHost, permissions, playback, durationMs, serverNow, rttMs, send, connected } = props;
-  const stream = usePlexStream(`/api/rooms/${roomId}/playback/start`, durationMs);
+  const stream = usePlexStream(`/api/rooms/${roomId}/playback`, durationMs);
   const { videoRef, phase, setPhase, load, mediaTimeMs, videoEvents } = stream;
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -363,6 +364,15 @@ export function RoomPlayer(props: Props) {
           onTogglePlay={canPlayPause ? togglePlay : null}
           onSeek={canSeek ? (ms) => void seek(ms) : null}
           busyLabel={busy}
+          extra={
+            <TrackMenu
+              apiBase={stream.apiBase}
+              onChanged={async () => {
+                // Reload in place; the room follows as usual (and waits if it takes a moment).
+                await stream.reloadHere();
+              }}
+            />
+          }
         />
       </div>
 

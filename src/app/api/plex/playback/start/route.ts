@@ -1,8 +1,4 @@
-import { getConfig } from "@/lib/config";
-import { isSameOrigin, jsonError } from "@/lib/http/security";
-import { parseOffsetMs, startPlayback } from "@/lib/plex/playback";
-import { noStore, pmsErrorResponse, requireSelectedServer } from "@/lib/servers/target";
-import { saveSession } from "@/lib/session/store";
+import { handleStart } from "@/lib/servers/playbackRoutes";
 
 /**
  * Starts host playback of the item picked for the watch party. Only that item
@@ -12,28 +8,5 @@ import { saveSession } from "@/lib/session/store";
  * player. The long-lived server token never leaves the server.
  */
 export async function POST(request: Request) {
-  if (!isSameOrigin(request, getConfig().appOrigin)) return jsonError(403, "Cross-origin request rejected");
-  const host = await requireSelectedServer();
-  if (host instanceof Response) return host;
-
-  const { session, target } = host;
-  const item = session.selectedItem;
-  if (!item) return jsonError(409, "Pick a movie or episode on the Browse page first.");
-
-  const location = session.selectedServer!.connection.local ? "lan" : "wan";
-  const body = (await request.json().catch(() => ({}))) as { offsetMs?: unknown };
-  const offsetMs = parseOffsetMs(body?.offsetMs);
-  try {
-    const start = await startPlayback(target, { ratingKey: item.ratingKey, location, offsetMs });
-    session.playback = {
-      sessionId: start.sessionId,
-      ratingKey: item.ratingKey,
-      durationMs: item.durationMs,
-      startedAt: Date.now(),
-    };
-    saveSession(session);
-    return Response.json({ ...start, item, location }, { headers: noStore });
-  } catch (err) {
-    return pmsErrorResponse(err, "playback");
-  }
+  return handleStart(request, null);
 }
