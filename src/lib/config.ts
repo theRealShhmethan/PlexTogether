@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import type { PlexAuthMode } from "@/lib/plex/auth";
+import { parseSessionSecret } from "@/lib/session/persist";
 
 /**
  * Server-side configuration, read from environment variables.
@@ -16,6 +17,10 @@ const EnvSchema = z.object({
   // "legacy" (default) or "jwt". JWT is Plex's recommended flow, but Plex Media
   // Server currently rejects JWTs — see src/lib/plex/auth.ts.
   PLEX_AUTH_MODE: z.enum(["legacy", "jwt"]).default("legacy"),
+  // 32 random bytes (base64). When set, sessions are saved encrypted to
+  // SESSION_STORE_PATH so a restart doesn't sign you out. SECRET — .env.local only.
+  SESSION_SECRET: z.string().min(1).optional(),
+  SESSION_STORE_PATH: z.string().min(1).default(".data/sessions.enc.json"),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 });
 
@@ -24,6 +29,8 @@ export type AppConfig = {
   productName: string;
   productVersion: string;
   authMode: PlexAuthMode;
+  /** null → sessions are memory-only. */
+  sessionPersist: { key: Buffer; path: string } | null;
   isProduction: boolean;
 };
 
@@ -38,6 +45,9 @@ export function getConfig(): AppConfig {
     productName: env.PLEX_PRODUCT_NAME,
     productVersion: "0.1.0",
     authMode: env.PLEX_AUTH_MODE,
+    sessionPersist: env.SESSION_SECRET
+      ? { key: parseSessionSecret(env.SESSION_SECRET), path: env.SESSION_STORE_PATH }
+      : null,
     isProduction: env.NODE_ENV === "production",
   };
   return cached;

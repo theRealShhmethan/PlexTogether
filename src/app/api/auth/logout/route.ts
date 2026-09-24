@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { getConfig } from "@/lib/config";
 import { isSameOrigin, jsonError } from "@/lib/http/security";
 import { COOKIE_SESSION } from "@/lib/session/cookies";
+import { initSessionStore } from "@/lib/session/host";
 import { deleteSession } from "@/lib/session/store";
 
 /**
@@ -14,6 +15,7 @@ import { deleteSession } from "@/lib/session/store";
  */
 export async function POST(request: Request) {
   if (!isSameOrigin(request, getConfig().appOrigin)) return jsonError(403, "Cross-origin request rejected");
+  initSessionStore();
   const store = await cookies();
   const id = store.get(COOKIE_SESSION)?.value;
   if (id) deleteSession(id);

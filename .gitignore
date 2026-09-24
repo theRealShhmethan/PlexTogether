@@ -52,3 +52,6 @@ secrets/
 !.vscode/extensions.json
 .idea/
 Thumbs.db
+
+# saved (encrypted) sessions
+/.data/

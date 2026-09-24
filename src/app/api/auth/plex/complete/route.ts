@@ -4,7 +4,7 @@ import { isSameOrigin, jsonError } from "@/lib/http/security";
 import { checkJwtPin, checkLegacyPin, fetchPlexUser } from "@/lib/plex/auth";
 import { PlexApiError } from "@/lib/plex/client";
 import { COOKIE_PENDING, COOKIE_SESSION, setSecureCookie } from "@/lib/session/cookies";
-import { plexClientFor } from "@/lib/session/host";
+import { initSessionStore, plexClientFor } from "@/lib/session/host";
 import { toPublicUser } from "@/lib/session/publicUser";
 import {
   deletePendingLogin,
@@ -24,6 +24,7 @@ export async function POST(request: Request) {
   const config = getConfig();
   if (!isSameOrigin(request, config.appOrigin)) return jsonError(403, "Cross-origin request rejected");
 
+  initSessionStore();
   const store = await cookies();
   const pending = getPendingLogin(store.get(COOKIE_PENDING)?.value);
   if (!pending) return jsonError(410, "Sign-in expired or was not started from this browser.");

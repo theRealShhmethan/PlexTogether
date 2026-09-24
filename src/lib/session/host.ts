@@ -4,7 +4,7 @@ import { getConfig } from "@/lib/config";
 import { refreshPlexJwt } from "@/lib/plex/auth";
 import type { PlexClientInfo } from "@/lib/plex/client";
 import { COOKIE_SESSION } from "./cookies";
-import { getSession, saveSession, type HostSession } from "./store";
+import { configurePersistence, getSession, saveSession, type HostSession } from "./store";
 
 /** Refresh a Plex JWT when it has less than this long left. */
 const REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -14,7 +14,13 @@ export function plexClientFor(clientIdentifier: string): PlexClientInfo {
   return { clientIdentifier, product: productName, version: productVersion };
 }
 
+/** Loads saved sessions on first use (no-op afterwards, or without SESSION_SECRET). */
+export function initSessionStore(): void {
+  configurePersistence(getConfig().sessionPersist);
+}
+
 export async function getCurrentSession(): Promise<HostSession | undefined> {
+  initSessionStore();
   const store = await cookies();
   return getSession(store.get(COOKIE_SESSION)?.value);
 }

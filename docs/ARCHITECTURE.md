@@ -71,7 +71,7 @@ the browser only receives an explicit allowlist of fields (`toPublicUser`, `toPu
 Before any server token is sent to a connection, `/identity` must return the expected machine id.
 
 **Sign-out** discards the token, but Plex documents no revoke endpoint, so **a discarded legacy
-token stays valid on plex.tv**. It's held only in memory, so this only matters if the server
+token stays valid on plex.tv**. It's held only in memory (or encrypted on disk, see below), so this only matters if the server
 process was compromised while you were signed in. To revoke it for certain, remove
 "PlexTogether" under plex.tv → Account → Authorized Devices. (A discarded JWT lapses within 7 days.)
 
@@ -88,7 +88,16 @@ Plex's official docs. They're what Plex's own apps use, and python-plexapi relie
 Response shapes are validated loosely (`src/lib/plex/home.ts`). A profile PIN is forwarded to
 plex.tv over HTTPS and never stored or logged.
 
-Everything is in memory: if the server restarts, the host signs in again. That's acceptable for v0.1.
+### Saved sessions
+
+Sessions live in memory. If `SESSION_SECRET` (32 random bytes, in `.env.local`) is set, they're also saved to
+`SESSION_STORE_PATH` (default `.data/sessions.enc.json`, gitignored) with **AES-256-GCM**.
+The file is written atomically and re-read at startup. That includes the account token, the active
+Home profile and its token, and the selected server (with its token) and item. The server-list cache
+isn't saved, and pending logins never are. A tampered file, or a changed or removed key, means the
+file is ignored and everyone signs in again. JWT-mode sessions aren't saved, because their device
+key is deliberately non-extractable. Sessions last 30 days. Threat model: the file alone is useless,
+but the file **plus** `.env.local` reveals the tokens, so both rely on the host machine's account security.
 
 ## 3. The PMS token model: what the docs say
 

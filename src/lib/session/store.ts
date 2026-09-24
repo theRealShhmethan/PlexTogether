@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { loadSessionsFromDisk, writeSessionsToDisk, type PersistConfig } from "./persist";
 import type { PlexAuthMode } from "@/lib/plex/auth";
 import type { LibraryItem } from "@/lib/plex/library";
 import type { DeviceKey } from "@/lib/plex/deviceKey";
@@ -6,8 +7,9 @@ import type { PlexConnection, PlexServer } from "@/lib/plex/resources";
 import type { PlexUser } from "@/lib/plex/schemas";
 
 /**
- * In-memory session store (v0.1). Everything is lost when the process
- * restarts, which simply means the host signs in again.
+ * Session store: in memory, optionally mirrored to an encrypted file (see
+ * persist.ts) so a restart doesn't sign the host out. Pending logins are
+ * never persisted.
  *
  * SECURITY: this is the ONLY place the host's Plex token (and, in JWT mode,
  * the device private key) live. Browsers receive an opaque random session id in an HttpOnly cookie;
@@ -75,7 +77,7 @@ export type SelectedServer = {
 };
 
 export const PENDING_LOGIN_TTL_MS = 15 * 60 * 1000;
-export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** 256 bits from the OS CSPRNG, URL-safe. */
 export function randomId(): string {
@@ -85,6 +87,8 @@ export function randomId(): string {
 type Stores = {
   pending: Map<string, PendingLogin>;
   sessions: Map<string, HostSession>;
+  persist: PersistConfig | null;
+  loaded: boolean;
 };
 
 // Kept on globalThis so Next.js dev-mode module reloads share one store.
@@ -92,11 +96,32 @@ const globalStores = globalThis as typeof globalThis & { __plexTogetherStores?: 
 const stores: Stores = (globalStores.__plexTogetherStores ??= {
   pending: new Map(),
   sessions: new Map(),
+  persist: null,
+  loaded: false,
 });
+
+/** Enables encrypted on-disk persistence (called once at startup when SESSION_SECRET is set). */
+export function configurePersistence(cfg: PersistConfig | null): void {
+  if (stores.loaded) return;
+  stores.persist = cfg;
+  stores.loaded = true;
+  if (cfg) for (const s of loadSessionsFromDisk(cfg)) stores.sessions.set(s.id, s);
+}
+
+function flush(): void {
+  if (stores.persist) writeSessionsToDisk(stores.persist, [...stores.sessions.values()]);
+}
 
 function sweep(now = Date.now()) {
   for (const [id, p] of stores.pending) if (p.expiresAt <= now) stores.pending.delete(id);
-  for (const [id, s] of stores.sessions) if (s.expiresAt <= now) stores.sessions.delete(id);
+  let expired = false;
+  for (const [id, s] of stores.sessions) {
+    if (s.expiresAt <= now) {
+      stores.sessions.delete(id);
+      expired = true;
+    }
+  }
+  if (expired) flush();
 }
 
 export function savePendingLogin(p: PendingLogin): void {
@@ -117,6 +142,7 @@ export function deletePendingLogin(id: string): void {
 export function saveSession(s: HostSession): void {
   sweep();
   stores.sessions.set(s.id, s);
+  flush();
 }
 
 export function getSession(id: string | undefined): HostSession | undefined {
@@ -127,10 +153,13 @@ export function getSession(id: string | undefined): HostSession | undefined {
 
 export function deleteSession(id: string): void {
   stores.sessions.delete(id);
+  flush();
 }
 
 /** Test helper. */
 export function _resetStores(): void {
   stores.pending.clear();
   stores.sessions.clear();
+  stores.persist = null;
+  stores.loaded = false;
 }

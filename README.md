@@ -11,7 +11,7 @@ media; PlexTogether handles rooms and synchronization.
 | 1 | Project foundation | ✅ done |
 | 2 | Plex sign-in (PIN flow) | ✅ done — verified with a real account (Chrome, Windows) |
 | 3 | Server discovery + connectivity check | ✅ done — verified against a real PMS (Synology, 1.42.1) |
-| 4 | Library browsing, Continue Watching, search, pick an item; Plex Home profile switching | ✅ implemented, **needs a real-server test** |
+| 4 | Library browsing, Continue Watching, search, pick an item; Plex Home profile switching | ✅ done — verified against a real PMS |
 | 5 | Playback proof of concept | ⏳ not started |
 | 6 | Rooms / invites | ⏳ blocked on a guest-access decision (see below) |
 | 7 | Playback sync | ⏳ not started |
@@ -44,7 +44,7 @@ Requirements: Node.js 20.9+ (developed on 24), npm.
 
 ```bash
 npm install
-cp .env.example .env.local   # optional; defaults work for localhost
+cp .env.example .env.local   # then set SESSION_SECRET (see below) to stay signed in across restarts
 npm run dev                  # http://localhost:3000
 ```
 
@@ -66,9 +66,11 @@ Open **exactly** the URL in `APP_URL` (default `http://localhost:3000`, not
 | --- | --- | --- |
 | `APP_URL` | `http://localhost:3000` | Public origin; used for the Plex return URL and CSRF origin checks |
 | `PLEX_PRODUCT_NAME` | `PlexTogether` | Name shown in plex.tv → Authorized Devices |
+| `SESSION_SECRET` | *(unset)* | **Secret.** 32 random bytes (base64). When set, sign-ins, including the selected Plex Home profile, server and pick, are saved **encrypted** so a restart doesn't sign you out. Unset means memory only. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` |
+| `SESSION_STORE_PATH` | `.data/sessions.enc.json` | Where the encrypted sessions are saved (gitignored) |
 | `PLEX_AUTH_MODE` | `legacy` | `legacy` or `jwt`. JWT is Plex's recommended method, but Plex Media Server currently rejects JWTs, so leave this on `legacy` for now |
 
-There are no secrets in env today. Plex tokens are obtained at runtime and held only in server memory.
+`SESSION_SECRET` is the only secret. Keep it in `.env.local`, which is gitignored. Plex tokens are obtained at sign-in, not configured.
 
 ## Security model (short version)
 
@@ -84,7 +86,7 @@ There are no secrets in env today. Plex tokens are obtained at runtime and held 
 - Sign out discards the token, but legacy tokens **stay valid on plex.tv** until revoked
   (Plex has no documented revoke API). To revoke, remove "PlexTogether" under
   plex.tv → Account → Authorized Devices.
-- Restarting the server signs everyone out (sessions are in memory).
+- With `SESSION_SECRET` set, sessions are saved to `.data/` encrypted with AES-256-GCM, so that file contains no readable tokens. Without it, sessions are memory-only and a restart signs you out. Anyone with both the `.data/` file **and** `.env.local` could read the tokens, so keep the laptop account secure.
 
 ## Supported browsers
 
@@ -95,7 +97,7 @@ Target: host on Chrome/Edge (Windows), guest on Chrome (macOS). Safari is desira
 - Sign-in, server selection and library browsing only. No playback, rooms, or sync yet.
 - Posters are fetched through PlexTogether (`/api/plex/image`, allowlisted Plex image paths only) so the server token never reaches the browser.
 - Connectivity is checked from the PlexTogether server, not the browser. On localhost these are the same machine; once hosted elsewhere, Phase 5 will also need a browser-side check.
-- Sessions are lost on restart. Single process only.
+- Single process only. JWT-mode sessions aren't saved across restarts.
 - Remote guests need the app served over HTTPS at a public URL. Localhost only works for testing on your own machine.
 
 ## Roadmap
