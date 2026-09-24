@@ -1,11 +1,20 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { getConfig } from "@/lib/config";
+import type { PlexAuthMode } from "@/lib/plex/auth";
 
 export const COOKIE_SESSION = "pt_session";
 export const COOKIE_PENDING = "pt_login";
-/** Stable, non-secret Plex client identifier for this browser. */
-export const COOKIE_CLIENT_ID = "pt_cid";
+/**
+ * Stable, non-secret Plex client identifier for this browser, one per auth
+ * mode. PLEX QUIRK (observed 2026-09-23): after an identifier had been used
+ * for JWT sign-in, app.plex.tv refused a legacy PIN sign-in for it ("We were
+ * unable to complete this request"), so the two modes never share one.
+ * (The original `pt_cid` cookie was used by JWT sign-ins, so it is retired.)
+ */
+export function clientIdCookieName(mode: PlexAuthMode): string {
+  return mode === "jwt" ? "pt_cid_jwt" : "pt_cid_legacy";
+}
 
 type CookieStore = Awaited<ReturnType<typeof cookies>>;
 

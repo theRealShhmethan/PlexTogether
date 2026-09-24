@@ -5,7 +5,7 @@ import { isSameOrigin, jsonError } from "@/lib/http/security";
 import { buildAuthAppUrl, createJwtPin, createLegacyPin } from "@/lib/plex/auth";
 import { PlexApiError } from "@/lib/plex/client";
 import { generateDeviceKey } from "@/lib/plex/deviceKey";
-import { COOKIE_CLIENT_ID, COOKIE_PENDING, setSecureCookie } from "@/lib/session/cookies";
+import { clientIdCookieName, COOKIE_PENDING, setSecureCookie } from "@/lib/session/cookies";
 import { plexClientFor } from "@/lib/session/host";
 import { PENDING_LOGIN_TTL_MS, randomId, savePendingLogin } from "@/lib/session/store";
 
@@ -21,7 +21,8 @@ export async function POST(request: Request) {
   if (!isSameOrigin(request, config.appOrigin)) return jsonError(403, "Cross-origin request rejected");
 
   const store = await cookies();
-  let clientIdentifier = store.get(COOKIE_CLIENT_ID)?.value;
+  const clientIdCookie = clientIdCookieName(config.authMode);
+  let clientIdentifier = store.get(clientIdCookie)?.value;
   if (!clientIdentifier || !CLIENT_ID_PATTERN.test(clientIdentifier)) clientIdentifier = randomUUID();
 
   const client = plexClientFor(clientIdentifier);
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
     expiresAt: Date.now() + PENDING_LOGIN_TTL_MS,
   });
 
-  setSecureCookie(store, COOKIE_CLIENT_ID, clientIdentifier, 400 * 24 * 60 * 60);
+  setSecureCookie(store, clientIdCookie, clientIdentifier, 400 * 24 * 60 * 60);
   setSecureCookie(store, COOKIE_PENDING, pendingId, PENDING_LOGIN_TTL_MS / 1000);
 
   const authUrl = buildAuthAppUrl(client, pin.code, `${config.appOrigin}/auth/callback`);

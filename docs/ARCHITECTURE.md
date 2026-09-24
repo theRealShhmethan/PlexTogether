@@ -62,7 +62,7 @@ is simpler and no less secure.
 | Per-server `accessToken`s from `/resources` | server memory | **never** (Phase 5 will need one in the host's browser; see §5) |
 | Device private key (JWT mode) | server memory, non-extractable | **never** |
 | Session id (random 256-bit) | `pt_session` cookie, HttpOnly, SameSite=Lax, Secure in prod | yes, as an opaque id |
-| Client identifier (not secret) | `pt_cid` cookie | yes |
+| Client identifier (not secret) | `pt_cid_legacy` / `pt_cid_jwt` cookie (one per auth mode; Plex refuses legacy sign-in for an id registered as a JWT device) | yes |
 
 Other controls: same-origin (`Origin`) checks on every POST route; `Referrer-Policy: no-referrer`;
 `frame-ancestors 'none'`; Plex errors are logged without URLs or headers; responses are validated with zod;

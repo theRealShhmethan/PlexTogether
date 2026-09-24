@@ -10,7 +10,7 @@ media; PlexTogether handles rooms and synchronization.
 | --- | --- | --- |
 | 1 | Project foundation | ✅ done |
 | 2 | Plex sign-in (PIN flow) | ✅ done — verified with a real account (Chrome, Windows) |
-| 3 | Server discovery + connectivity check | ✅ implemented, **needs a real-server test** |
+| 3 | Server discovery + connectivity check | ✅ done — verified against a real PMS (Synology, 1.42.1) |
 | 4 | Library browsing | ⏳ not started |
 | 5 | Playback proof of concept | ⏳ not started |
 | 6 | Rooms / invites | ⏳ blocked on a guest-access decision (see below) |
