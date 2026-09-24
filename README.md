@@ -48,6 +48,8 @@ cp .env.example .env.local   # then set SESSION_SECRET (see below) to stay signe
 npm run dev                  # http://localhost:3000
 ```
 
+On Windows you can instead double-click **`start-dev.bat`**, or run it from cmd. It starts the dev server from the project folder and opens the browser.
+
 Open **exactly** the URL in `APP_URL` (default `http://localhost:3000`, not
 `127.0.0.1`). Sign-in POSTs are rejected if the origin doesn't match.
 
