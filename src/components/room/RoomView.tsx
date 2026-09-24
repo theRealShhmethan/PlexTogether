@@ -103,6 +103,7 @@ export function RoomView({ initial, isHost, inviteUrl }: { initial: PublicRoom; 
             permissions={me?.permissions ?? { playPause: false, seek: false }}
             playback={room.playback}
             durationMs={room.durationMs}
+            resumeMs={room.resumeMs}
             waitingFor={room.waitingFor}
             nameOf={(id) => room.participants.find((p) => p.id === id)?.name ?? null}
             serverNow={serverNow}

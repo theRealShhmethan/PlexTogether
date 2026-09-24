@@ -36,6 +36,8 @@ export type PublicRoom = {
   /** The room's playback: who last played/paused/seeked, where, and when. */
   playback: PlaybackAnchor;
   durationMs: number | null;
+  /** Where the host left off on Plex when the room was created (null = start at the beginning). */
+  resumeMs: number | null;
   /** Names of people whose buffering has paused the room ("Waiting for Lexi…"). */
   waitingFor: string[];
 };

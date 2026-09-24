@@ -55,6 +55,8 @@ export type RoomItem = {
   serverId: string;
   serverName: string;
   durationMs: number | null;
+  /** The host's Plex resume point when the room was created; the room starts there. */
+  resumeMs?: number | null;
 };
 
 export type Room = {
@@ -272,6 +274,7 @@ export function publicRoom(room: Room, viewerId: string): PublicRoom {
     you: viewerId,
     playback: room.playback,
     durationMs: room.item.durationMs,
+    resumeMs: room.item.resumeMs ?? null,
     waitingFor: [...room.waitingFor].map((id) => room.participants.get(id)?.name).filter((n): n is string => !!n),
   };
 }
@@ -317,7 +320,7 @@ export function createRoom(opts: {
     hostParticipantId: host.id,
     participants: new Map([[host.id, host]]),
     item: opts.item,
-    playback: { status: "idle", positionMs: 0, anchorServerTime: now, by: null, seq: 0 },
+    playback: { status: "idle", positionMs: opts.item.resumeMs ?? 0, anchorServerTime: now, by: null, seq: 0 },
     waitingFor: new Set(),
     autoPauseSeq: null,
     createdAt: now,
@@ -401,8 +404,8 @@ export function controlPlayback(
   const current = room.playback;
   // A tick only refreshes ongoing playback from the reference player; it never un-pauses.
   if (action === "tick" && (current.status !== "playing" || current.by !== participantId)) return true;
-  const status =
-    action === "pause" ? "paused" : action === "seek" ? (current.status === "idle" ? "paused" : current.status) : "playing";
+  // Seeking before the start (choosing resume vs beginning) keeps the room waiting for Start Together.
+  const status = action === "pause" ? "paused" : action === "seek" ? current.status : "playing";
   room.playback = { status, positionMs, anchorServerTime: Date.now() - latencyMs, by: participantId, seq: current.seq + 1 };
   // A deliberate action overrides any buffering wait.
   clearWaiting(room);

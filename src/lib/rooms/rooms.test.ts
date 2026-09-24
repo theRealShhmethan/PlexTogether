@@ -442,3 +442,24 @@ describe("room persistence", () => {
     );
   });
 });
+
+describe("resume point", () => {
+  it("starts the room where the host left off, and choosing a start keeps it waiting", async () => {
+    const session = hostSession();
+    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "T", item: { ...item, resumeMs: 2_712_000 } });
+    if (!r.ok) throw new Error();
+    expect(getRoom(r.room.id)!.playback).toMatchObject({ status: "idle", positionMs: 2_712_000 });
+
+    const host = await connect(r.room.id, `pt_session=${session.id}`);
+    expect((await until(() => lastState(host)))!.resumeMs).toBe(2_712_000);
+
+    // "From the beginning" before starting: still idle, now at 0.
+    host.ws.send(JSON.stringify({ type: "control", action: "seek", positionMs: 0, latencyMs: 0 }));
+    await until(() => (getRoom(r.room.id)?.playback.positionMs === 0 ? true : undefined));
+    expect(getRoom(r.room.id)!.playback.status).toBe("idle");
+
+    host.ws.send(JSON.stringify({ type: "start", positionMs: 0 }));
+    await until(() => (getRoom(r.room.id)?.playback.status === "playing" ? true : undefined));
+    host.ws.close();
+  });
+});

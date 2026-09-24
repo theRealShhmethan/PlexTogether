@@ -1024,3 +1024,7 @@ details.stream-info[open] summary {
     display: none;
   }
 }
+
+.start-choice {
+  gap: 6px;
+}

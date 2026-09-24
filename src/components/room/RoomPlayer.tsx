@@ -7,6 +7,7 @@ import { TrackMenu } from "@/components/player/TrackMenu";
 import { usePlexStream } from "@/components/player/usePlexStream";
 import { SignInButton } from "@/components/SignInButton";
 import type { ClientMessage, Permissions } from "@/lib/rooms/protocol";
+import { formatTime } from "@/lib/format/time";
 import { correctionFor, DRIFT, driftLabel, expectedPositionMs, type PlaybackAnchor } from "@/lib/sync/drift";
 
 const SYNC_LOOP_MS = 250;
@@ -49,6 +50,7 @@ type Props = {
   permissions: Permissions;
   playback: PlaybackAnchor;
   durationMs: number | null;
+  resumeMs: number | null;
   waitingFor: string[];
   serverNow: () => number;
   rttMs: number | null;
@@ -173,7 +175,7 @@ export function RoomPlayer(props: Props) {
       setCountdown(a.status === "playing" && !due ? Math.ceil((a.anchorServerTime - now) / 1000) : null);
 
       // The reference player sets the pace and is never corrected.
-      if (a.by === me || a.status === "idle") {
+      if (a.by === me) {
         driftRef.current = null;
         setDrift(null);
         return;
@@ -182,8 +184,9 @@ export function RoomPlayer(props: Props) {
       const expected = expectedPositionMs(a, now);
       const actual = mediaTimeMs();
       const ahead = actual - expected;
-      driftRef.current = ahead;
-      setDrift(ahead);
+      // Before the start there's nothing to be "in sync" with yet, but players still line up (below).
+      driftRef.current = a.status === "idle" ? null : ahead;
+      setDrift(driftRef.current);
 
       if (!due) {
         // Paused (or a scheduled start not yet due): sit at the right spot.
@@ -330,7 +333,14 @@ export function RoomPlayer(props: Props) {
   }, [connected, phase.kind, roomId]);
 
   function startTogether() {
-    send({ type: "start", positionMs: Math.round(mediaTimeMs()) });
+    // Start from the chosen starting point (resume or beginning), not wherever this player drifted.
+    send({ type: "start", positionMs: Math.round(anchorRef.current.positionMs) });
+  }
+
+  /** Before the start: choose where the room begins; everyone's player lines up there. */
+  function chooseStart(ms: number) {
+    if (loaded) void seek(ms);
+    else control("seek", ms);
   }
 
   const leader = playback.by === me ? "you" : props.nameOf(playback.by);
@@ -425,13 +435,30 @@ export function RoomPlayer(props: Props) {
           ) : playback.status === "idle" ? (
             isHost ? (
               <>
-                <span className="muted small">When everyone&apos;s ready, start together.</span>
+                {props.resumeMs !== null ? (
+                  <div className="row start-choice" role="radiogroup" aria-label="Where to start">
+                    <button
+                      className={Math.abs(playback.positionMs - props.resumeMs) < 1000 ? "tab active" : "tab"}
+                      onClick={() => chooseStart(props.resumeMs!)}
+                    >
+                      Resume at {formatTime(props.resumeMs)}
+                    </button>
+                    <button className={playback.positionMs < 1000 ? "tab active" : "tab"} onClick={() => chooseStart(0)}>
+                      From the beginning
+                    </button>
+                  </div>
+                ) : (
+                  <span className="muted small">When everyone&apos;s ready, start together.</span>
+                )}
                 <button className="button" onClick={startTogether} disabled={!props.canStart || !playerReady} title={props.startHint}>
                   Start Together
                 </button>
               </>
             ) : (
-              <span className="muted">Waiting for the host to start…</span>
+              <span className="muted">
+                Waiting for the host to start…
+                {playback.positionMs > 60_000 ? ` (from ${formatTime(playback.positionMs)})` : ""}
+              </span>
             )
           ) : playback.by === me ? (
             <span className="muted small">
