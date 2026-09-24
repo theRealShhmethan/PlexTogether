@@ -56,6 +56,8 @@ export type PlaybackDecision = {
   text: string | null;
   /** "directplay" | "transcode" | ... (per part, from Plex). */
   partDecision: string | null;
+  /** Plex's own explanations (e.g. why it transcodes), de-duplicated. */
+  reasons: string[];
   container: string | null;
   videoResolution: string | null;
   streams: StreamDecision[];
@@ -85,6 +87,8 @@ const DecisionSchema = z.object({
     .object({
       generalDecisionCode: z.number().int().optional(),
       generalDecisionText: z.string().optional(),
+      directPlayDecisionText: z.string().optional(),
+      transcodeDecisionText: z.string().optional(),
       Metadata: z
         .array(
           z
@@ -166,6 +170,7 @@ export function summarizeDecision(raw: z.infer<typeof DecisionSchema>): Playback
     code: mc.generalDecisionCode ?? null,
     text: mc.generalDecisionText ?? null,
     partDecision: part?.decision ?? null,
+    reasons: [...new Set([mc.transcodeDecisionText, mc.directPlayDecisionText].filter((t): t is string => !!t))],
     container: media?.container ?? null,
     videoResolution: media?.videoResolution ?? null,
     streams: (part?.Stream ?? [])

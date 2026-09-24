@@ -11,8 +11,10 @@ import { correctionFor, DRIFT, driftLabel, expectedPositionMs, type PlaybackAnch
 const SYNC_LOOP_MS = 250;
 const STATUS_MS = 1000;
 const TICK_MS = 2000;
-/** After a hard seek, give HLS time to fetch/decode before judging drift again. */
-const SEEK_COOLDOWN_MS = 2000;
+/** After repositioning, leave the player alone for a while before judging drift again. */
+const SEEK_COOLDOWN_MS = 10_000;
+/** While paused, line up with the room if off by more than this (cheap when it's buffered). */
+const PAUSED_ALIGN_MS = 1500;
 /** A buffered (instant) seek lands this far ahead, then holds until the room reaches it. */
 const LOCAL_SEEK_LEAD_MS = 300;
 /** First guess at how long a new Plex session takes to become playable; learned from experience. */
@@ -27,6 +29,7 @@ type Props = {
   permissions: Permissions;
   playback: PlaybackAnchor;
   durationMs: number | null;
+  waitingFor: string[];
   serverNow: () => number;
   rttMs: number | null;
   send: (msg: ClientMessage) => void;
@@ -71,6 +74,7 @@ export function RoomPlayer(props: Props) {
   const cooldownUntil = useRef(0);
   const holdTimer = useRef<number | undefined>(undefined);
   const restartMsRef = useRef(INITIAL_RESTART_MS);
+  const lastRepositionAt = useRef(-Infinity);
 
   const loaded = phase.kind === "loaded";
   const playerReady = loaded && canPlay;
@@ -95,7 +99,30 @@ export function RoomPlayer(props: Props) {
       restartMsRef.current = 0.5 * restartMsRef.current + 0.5 * (performance.now() - started);
     }
     cooldownUntil.current = performance.now() + SEEK_COOLDOWN_MS;
+    lastRepositionAt.current = performance.now();
     seekingRef.current = false;
+  }
+
+  /** ms buffered ahead of the playhead. */
+  function bufferedAheadMs(): number {
+    const v = videoRef.current;
+    if (!v) return 0;
+    for (let i = 0; i < v.buffered.length; i++) {
+      if (v.currentTime >= v.buffered.start(i) && v.currentTime <= v.buffered.end(i)) {
+        return (v.buffered.end(i) - v.currentTime) * 1000;
+      }
+    }
+    return 0;
+  }
+
+  /** Repositions only if we haven't just done so; prefers an instant (buffered) seek. */
+  function maybeReposition(targetMs: number, withLead: boolean) {
+    const sinceLast = performance.now() - lastRepositionAt.current;
+    const buffered = stream.isBuffered(targetMs + LOCAL_SEEK_LEAD_MS);
+    if (!buffered && sinceLast < DRIFT.repositionMinIntervalMs) return false;
+    const lead = !withLead ? 0 : buffered ? LOCAL_SEEK_LEAD_MS : restartMsRef.current + 1000;
+    void reposition(targetMs + lead);
+    return true;
   }
 
   // --- follow the room ---
@@ -127,7 +154,10 @@ export function RoomPlayer(props: Props) {
         if (!v.paused) v.pause();
         v.playbackRate = 1;
         nudgingRef.current = false;
-        if (Math.abs(ahead) > 500 && performance.now() > cooldownUntil.current) void reposition(expected);
+        if (Math.abs(ahead) > PAUSED_ALIGN_MS && performance.now() > cooldownUntil.current) {
+          // Close enough and not buffered → leave it; the few seconds don't matter.
+          if (stream.isBuffered(expected) || Math.abs(ahead) > DRIFT.ignoreMs) maybeReposition(expected, false);
+        }
         return;
       }
 
@@ -142,22 +172,25 @@ export function RoomPlayer(props: Props) {
           }
           return;
         }
-        if (ahead <= 0 && ahead > -DRIFT.ignoreMs) {
-          void v.play().catch(() => {});
-          return;
-        }
-        const lead = stream.isBuffered(expected + LOCAL_SEEK_LEAD_MS) ? LOCAL_SEEK_LEAD_MS : restartMsRef.current + 1000;
-        void reposition(expected + lead);
+        // Within tolerance (or we can't reposition yet): just play.
+        if (ahead > -DRIFT.hardSeekMs || !maybeReposition(expected, true)) void v.play().catch(() => {});
         return;
       }
 
-      if (bufferingRef.current || performance.now() < cooldownUntil.current) return;
-      const c = correctionFor(actual, expected, nudgingRef.current);
+      if (bufferingRef.current || performance.now() < cooldownUntil.current) {
+        v.playbackRate = 1;
+        nudgingRef.current = false;
+        return;
+      }
+      const c = correctionFor(actual, expected, {
+        nudging: nudgingRef.current,
+        bufferedAheadMs: bufferedAheadMs(),
+        sinceRepositionMs: performance.now() - lastRepositionAt.current,
+      });
       if (c.kind === "seek") {
         v.playbackRate = 1;
         nudgingRef.current = false;
-        const lead = stream.isBuffered(expected + LOCAL_SEEK_LEAD_MS) ? LOCAL_SEEK_LEAD_MS : restartMsRef.current + 1000;
-        void reposition(expected + lead);
+        maybeReposition(expected, true);
       } else {
         v.playbackRate = c.rate;
         nudgingRef.current = c.kind === "rate";
@@ -171,17 +204,31 @@ export function RoomPlayer(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refs and stable callbacks only
   }, [loaded, me, serverNow]);
 
+  const playerReadyRef = useRef(false);
+  useEffect(() => {
+    playerReadyRef.current = playerReady;
+  }, [playerReady]);
+
+  function sendStatus() {
+    if (!connected) return;
+    send({
+      type: "status",
+      playerReady: playerReadyRef.current,
+      buffering: bufferingRef.current,
+      driftMs: driftRef.current === null ? null : Math.round(driftRef.current),
+      positionMs: playerReadyRef.current ? Math.round(mediaTimeMs()) : null,
+    });
+  }
+  function setBuffering(b: boolean) {
+    if (bufferingRef.current === b) return;
+    bufferingRef.current = b;
+    sendStatus(); // the room may need to pause for us — tell it now
+  }
+
   // --- status to the room; the reference player keeps the anchor fresh ---
   useEffect(() => {
     if (!connected) return;
-    const status = window.setInterval(() => {
-      send({
-        type: "status",
-        playerReady,
-        buffering: bufferingRef.current,
-        driftMs: driftRef.current === null ? null : Math.round(driftRef.current),
-      });
-    }, STATUS_MS);
+    const status = window.setInterval(sendStatus, STATUS_MS);
     const tick = window.setInterval(() => {
       const v = videoRef.current;
       const a = anchorRef.current;
@@ -253,11 +300,11 @@ export function RoomPlayer(props: Props) {
           onEnded={videoEvents.onEnded}
           onWaiting={() => {
             videoEvents.onWaiting();
-            bufferingRef.current = true;
+            setBuffering(true);
           }}
-          onPlaying={() => (bufferingRef.current = false)}
+          onPlaying={() => setBuffering(false)}
           onCanPlay={() => {
-            bufferingRef.current = false;
+            setBuffering(false);
             setCanPlay(true);
           }}
         />
@@ -301,8 +348,10 @@ export function RoomPlayer(props: Props) {
 
       {loaded && (
         <div className="row sync-bar">
-          {countdown !== null ? (
-            <strong>Starting in {countdown}…</strong>
+          {props.waitingFor.length > 0 ? (
+            <strong>Waiting for {props.waitingFor.join(", ")}…</strong>
+          ) : countdown !== null ? (
+            <strong>{playback.seq > 1 ? "Resuming" : "Starting"} in {countdown}…</strong>
           ) : playback.status === "idle" ? (
             isHost ? (
               <>

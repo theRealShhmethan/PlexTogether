@@ -33,36 +33,43 @@ describe("expectedPositionMs", () => {
   });
 });
 
+const ctx = { nudging: false, bufferedAheadMs: 30_000, sinceRepositionMs: Infinity };
+
 describe("correctionFor", () => {
   it.each([
-    [100, "none", 1],
-    [-200, "none", 1],
-    [400, "rate", 0.95], // ahead → slow down
-    [-400, "rate", 1.05], // behind → speed up
-    [1500, "rate", 0.9],
-    [-1500, "rate", 1.1],
+    [1000, "none", 1],
+    [-2500, "none", 1],
+    [4000, "rate", 0.96], // ahead → slow down
+    [-4000, "rate", 1.04], // behind → speed up (well buffered)
   ])("drift %i ms → %s (rate %f)", (drift, kind, rate) => {
-    const c = correctionFor(10_000 + drift, 10_000, false);
+    const c = correctionFor(100_000 + drift, 100_000, ctx);
     expect(c.kind).toBe(kind);
     if (c.kind !== "seek") expect(c.rate).toBeCloseTo(rate);
   });
 
-  it("hard-seeks beyond 2 s", () => {
-    expect(correctionFor(13_000, 10_000, false)).toEqual({ kind: "seek", toMs: 10_000 });
-    expect(correctionFor(7_000, 10_000, true)).toEqual({ kind: "seek", toMs: 10_000 });
+  it("never speeds up on a thin buffer (it would just stall)", () => {
+    expect(correctionFor(96_000, 100_000, { ...ctx, bufferedAheadMs: 5000 })).toEqual({ kind: "none", rate: 1 });
+    // Slowing down is always fine.
+    expect(correctionFor(104_000, 100_000, { ...ctx, bufferedAheadMs: 0 }).kind).toBe("rate");
   });
 
-  it("keeps nudging until well inside the dead zone (hysteresis)", () => {
-    expect(correctionFor(10_200, 10_000, true).kind).toBe("rate");
-    expect(correctionFor(10_200, 10_000, false).kind).toBe("none");
-    expect(correctionFor(10_050, 10_000, true).kind).toBe("none");
+  it("repositions beyond 8 s, but not more than once per 30 s", () => {
+    expect(correctionFor(110_000, 100_000, ctx)).toEqual({ kind: "seek", toMs: 100_000 });
+    expect(correctionFor(110_000, 100_000, { ...ctx, sinceRepositionMs: 5000 }).kind).toBe("rate");
+  });
+
+  it("keeps nudging until within 1 s (hysteresis)", () => {
+    expect(correctionFor(102_000, 100_000, { ...ctx, nudging: true }).kind).toBe("rate");
+    expect(correctionFor(102_000, 100_000, ctx).kind).toBe("none");
+    expect(correctionFor(100_500, 100_000, { ...ctx, nudging: true }).kind).toBe("none");
   });
 });
 
 describe("driftLabel", () => {
   it("formats", () => {
-    expect(driftLabel(82)).toBe("Synced · 82 ms");
-    expect(driftLabel(-1200)).toBe("Catching up · −1.2 s");
+    expect(driftLabel(82)).toBe("In sync · 82 ms");
+    expect(driftLabel(-2400)).toBe("In sync · 2.4 s");
+    expect(driftLabel(-5200)).toBe("Catching up · −5.2 s");
     expect(driftLabel(null)).toBe("Not synced yet");
   });
 });

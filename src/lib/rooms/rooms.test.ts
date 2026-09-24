@@ -280,13 +280,69 @@ describe("playback sync over sockets", () => {
 
   it("shares each guest's drift and player state with the room", async () => {
     const { host, guest } = await setup();
-    guest.ws.send(JSON.stringify({ type: "status", playerReady: true, buffering: false, driftMs: 82 }));
+    guest.ws.send(JSON.stringify({ type: "status", playerReady: true, buffering: false, driftMs: 82, positionMs: 1000 }));
     const lexi = await until(() => {
       const p = lastState(host)?.participants.find((x) => x.name === "Lexi");
       return p?.playerReady ? p : undefined;
     });
     expect(lexi).toMatchObject({ playerReady: true, buffering: false });
     await until(() => (lastState(host)?.participants.find((x) => x.name === "Lexi")?.driftMs === 82 ? true : undefined), 3000);
+    host.ws.close();
+    guest.ws.close();
+  });
+});
+
+describe("buffering pauses the room and resumes together", () => {
+  async function playingRoom() {
+    const session = hostSession();
+    const r = createRoom({ hostSessionId: session.id, hostName: "Ethan", title: "T", item });
+    if (!r.ok) throw new Error();
+    const j = joinRoom(r.room.id, "Lexi");
+    if (!j.ok) throw new Error();
+    const host = await connect(r.room.id, `pt_session=${session.id}`);
+    const guest = await connect(r.room.id, `pt_guest=${j.secret}`);
+    host.ws.send(JSON.stringify({ type: "control", action: "play", positionMs: 60_000, latencyMs: 0 }));
+    await until(() => (getRoom(r.room.id)?.playback.status === "playing" ? true : undefined));
+    return { room: r.room, host, guest };
+  }
+  const status = (c: Client, buffering: boolean, positionMs: number) =>
+    c.ws.send(JSON.stringify({ type: "status", playerReady: true, buffering, driftMs: 0, positionMs }));
+
+  it("ignores short hiccups", async () => {
+    const { room, host, guest } = await playingRoom();
+    status(guest, true, 61_000);
+    await new Promise((r) => setTimeout(r, 300));
+    status(guest, false, 61_300);
+    await new Promise((r) => setTimeout(r, 1600));
+    expect(getRoom(room.id)!.playback.status).toBe("playing");
+    host.ws.close();
+    guest.ws.close();
+  });
+
+  it("pauses everyone at the stalled player's position, then resumes together", async () => {
+    const { room, host, guest } = await playingRoom();
+    status(guest, true, 61_000);
+    const paused = await until(() => (getRoom(room.id)?.playback.status === "paused" ? getRoom(room.id)!.playback : undefined), 3000);
+    expect(paused).toMatchObject({ positionMs: 61_000, by: null });
+    expect(await until(() => lastState(host)?.waitingFor.length ? lastState(host)!.waitingFor : undefined)).toEqual(["Lexi"]);
+
+    const before = Date.now();
+    status(guest, false, 61_000);
+    const resumed = await until(() => (getRoom(room.id)?.playback.status === "playing" ? getRoom(room.id)!.playback : undefined));
+    expect(resumed.positionMs).toBe(61_000);
+    expect(resumed.anchorServerTime - before).toBeGreaterThanOrEqual(1000); // scheduled a moment ahead
+    expect(getRoom(room.id)!.waitingFor.size).toBe(0);
+    host.ws.close();
+    guest.ws.close();
+  });
+
+  it("a deliberate play overrides the wait", async () => {
+    const { room, host, guest } = await playingRoom();
+    status(guest, true, 61_000);
+    await until(() => (getRoom(room.id)?.playback.status === "paused" ? true : undefined), 3000);
+    host.ws.send(JSON.stringify({ type: "control", action: "play", positionMs: 61_000, latencyMs: 0 }));
+    await until(() => (getRoom(room.id)?.waitingFor.size === 0 ? true : undefined));
+    expect(getRoom(room.id)!.playback.by).toBe(room.hostParticipantId);
     host.ws.close();
     guest.ws.close();
   });

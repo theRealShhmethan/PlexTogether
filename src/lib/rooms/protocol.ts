@@ -36,6 +36,8 @@ export type PublicRoom = {
   /** The room's playback: who last played/paused/seeked, where, and when. */
   playback: PlaybackAnchor;
   durationMs: number | null;
+  /** Names of people whose buffering has paused the room ("Waiting for Lexi…"). */
+  waitingFor: string[];
 };
 
 const PositionMs = z.number().finite().min(0).max(24 * 60 * 60 * 1000);
@@ -66,6 +68,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("status"),
     playerReady: z.boolean(),
     buffering: z.boolean(),
+    // Where this player is (media time); used to pause the room at a buffering player's position.
+    positionMs: PositionMs.nullable(),
     driftMs: z.number().finite().min(-86_400_000).max(86_400_000).nullable(),
   }),
 ]);

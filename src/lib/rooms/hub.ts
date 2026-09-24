@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { PlaybackAnchor } from "@/lib/sync/drift";
+import { expectedPositionMs, type PlaybackAnchor } from "@/lib/sync/drift";
 import type { Permissions, PublicRoom, ServerMessage } from "./protocol";
 
 /**
@@ -23,6 +23,10 @@ const SWEEP_INTERVAL_MS = 60_000;
 export const START_DELAY_MS = 2500;
 /** Status updates are coalesced into at most one state broadcast per room per this interval. */
 const STATUS_BROADCAST_MS = 1000;
+/** Someone buffering this long pauses the room for everyone. Shorter hiccups are ignored. */
+export const BUFFER_GRACE_MS = 1500;
+/** After buffering ends, everyone resumes together this far ahead. */
+export const RESUME_DELAY_MS = 1500;
 
 export type Participant = {
   id: string;
@@ -34,6 +38,10 @@ export type Participant = {
   buffering: boolean;
   driftMs: number | null;
   permissions: Permissions;
+  /** Last reported media position (ms). */
+  positionMs: number | null;
+  /** When this player started buffering (for the grace period). */
+  bufferingSince: number | null;
 };
 
 /** What the room plays. Identifies the item on the host's server; no tokens. */
@@ -57,6 +65,13 @@ export type Room = {
   expiresAt: number;
   /** Pending coalesced state broadcast. */
   broadcastTimer?: ReturnType<typeof setTimeout>;
+  /**
+   * Participants whose buffering auto-paused the room, and the anchor seq of
+   * that auto-pause (if anyone acts after it, we don't auto-resume over them).
+   */
+  waitingFor: Set<string>;
+  autoPauseSeq: number | null;
+  bufferTimer?: ReturnType<typeof setTimeout>;
 };
 
 /** What the hub needs from a socket; implemented by server.ts with `ws`. */
@@ -146,6 +161,7 @@ export function publicRoom(room: Room, viewerId: string): PublicRoom {
     you: viewerId,
     playback: room.playback,
     durationMs: room.item.durationMs,
+    waitingFor: [...room.waitingFor].map((id) => room.participants.get(id)?.name).filter((n): n is string => !!n),
   };
 }
 
@@ -165,6 +181,8 @@ const newParticipant = (name: string, role: Participant["role"]): Participant =>
   driftMs: null,
   // Guests may pause and skip by default; the host can change it per guest.
   permissions: { playPause: true, seek: true },
+  positionMs: null,
+  bufferingSince: null,
 });
 
 export function createRoom(opts: {
@@ -189,6 +207,8 @@ export function createRoom(opts: {
     participants: new Map([[host.id, host]]),
     item: opts.item,
     playback: { status: "idle", positionMs: 0, anchorServerTime: now, by: null, seq: 0 },
+    waitingFor: new Set(),
+    autoPauseSeq: null,
     createdAt: now,
     expiresAt: now + ROOM_TTL_MS,
   };
@@ -219,6 +239,7 @@ export function leaveRoom(roomId: string, participantId: string): void {
   const room = hub.rooms.get(roomId);
   if (!room || participantId === room.hostParticipantId) return;
   room.participants.delete(participantId);
+  room.waitingFor.delete(participantId);
   for (const [secret, seat] of hub.guests) if (seat.participantId === participantId) hub.guests.delete(secret);
   for (const c of hub.sockets.get(roomId) ?? []) {
     if (c.participantId === participantId) c.close(4010, "left");
@@ -268,6 +289,8 @@ export function controlPlayback(
   const status =
     action === "pause" ? "paused" : action === "seek" ? (current.status === "idle" ? "paused" : current.status) : "playing";
   room.playback = { status, positionMs, anchorServerTime: Date.now() - latencyMs, by: participantId, seq: current.seq + 1 };
+  // A deliberate action overrides any buffering wait.
+  clearWaiting(room);
   broadcastPlayback(room);
   return true;
 }
@@ -283,8 +306,67 @@ export function startTogether(roomId: string, participantId: string, positionMs:
     by: null,
     seq: room.playback.seq + 1,
   };
+  clearWaiting(room);
   broadcastPlayback(room);
   return true;
+}
+
+// ---------- buffering: pause for everyone, resume together ----------
+
+function clearWaiting(room: Room): void {
+  const had = room.waitingFor.size > 0;
+  room.waitingFor.clear();
+  room.autoPauseSeq = null;
+  if (had) scheduleBroadcast(room);
+}
+
+/**
+ * Called when a participant's buffering state changes. If someone has been
+ * buffering past the grace period while the room plays, pause the room at
+ * their position (so they needn't seek) and wait for them. When nobody we're
+ * waiting for is buffering any more, resume together a moment ahead.
+ */
+function evaluateBuffering(room: Room): void {
+  const now = Date.now();
+  const a = room.playback;
+  const due = a.status === "playing" && now >= a.anchorServerTime;
+  const stalled = [...room.participants.values()].filter(
+    (p) => p.playerReady && p.buffering && p.bufferingSince !== null && now - p.bufferingSince >= BUFFER_GRACE_MS,
+  );
+
+  if (due && stalled.length > 0) {
+    // Pause where the furthest-behind stalled player is.
+    const expected = expectedPositionMs(a, now);
+    const at = Math.min(expected, ...stalled.map((p) => p.positionMs ?? expected));
+    room.playback = { status: "paused", positionMs: Math.max(0, at), anchorServerTime: now, by: null, seq: a.seq + 1 };
+    room.autoPauseSeq = room.playback.seq;
+    for (const p of stalled) room.waitingFor.add(p.id);
+    broadcastPlayback(room);
+    broadcast(room);
+    return;
+  }
+
+  if (room.autoPauseSeq !== null) {
+    // Someone new stalled while we were already waiting: wait for them too.
+    for (const p of stalled) room.waitingFor.add(p.id);
+    const stillWaiting = [...room.waitingFor].some((id) => {
+      const p = room.participants.get(id);
+      return p && p.buffering && p.playerReady;
+    });
+    if (!stillWaiting && room.playback.seq === room.autoPauseSeq) {
+      room.playback = {
+        status: "playing",
+        positionMs: room.playback.positionMs,
+        anchorServerTime: now + RESUME_DELAY_MS,
+        by: null,
+        seq: room.playback.seq + 1,
+      };
+      room.waitingFor.clear();
+      room.autoPauseSeq = null;
+      broadcastPlayback(room);
+      broadcast(room);
+    }
+  }
 }
 
 /** Host only: sets a guest's permissions, or every guest's with "*". */
@@ -301,13 +383,25 @@ export function setPermissions(roomId: string, byId: string, targetId: string, p
 export function updateStatus(
   roomId: string,
   participantId: string,
-  status: { playerReady: boolean; buffering: boolean; driftMs: number | null },
+  status: { playerReady: boolean; buffering: boolean; driftMs: number | null; positionMs: number | null },
 ): void {
   const room = getRoom(roomId);
   const p = room?.participants.get(participantId);
   if (!room || !p) return;
   const important = p.playerReady !== status.playerReady || p.buffering !== status.buffering;
+  if (status.buffering && !p.buffering) {
+    p.bufferingSince = Date.now();
+    // Re-check once the grace period has passed, even if no further status arrives.
+    clearTimeout(room.bufferTimer);
+    room.bufferTimer = setTimeout(() => {
+      const r = hub.rooms.get(room.id);
+      if (r) evaluateBuffering(r);
+    }, BUFFER_GRACE_MS + 50);
+    room.bufferTimer.unref?.();
+  }
+  if (!status.buffering) p.bufferingSince = null;
   Object.assign(p, status);
+  evaluateBuffering(room);
   if (important) broadcast(room);
   else scheduleBroadcast(room);
 }
@@ -329,6 +423,7 @@ export function endRoom(roomId: string, reason: "host-ended" | "expired" | "repl
   const room = hub.rooms.get(roomId);
   if (!room) return;
   clearTimeout(room.broadcastTimer);
+  clearTimeout(room.bufferTimer);
   hub.rooms.delete(roomId);
   for (const [secret, seat] of hub.guests) if (seat.roomId === roomId) hub.guests.delete(secret);
   const sockets = hub.sockets.get(roomId);

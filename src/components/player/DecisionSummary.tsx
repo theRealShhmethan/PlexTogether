@@ -32,6 +32,9 @@ export function DecisionSummary({ decision, location }: { decision: PlaybackDeci
         {shown.map((s, i) => (
           <li key={i}>{line(s)}</li>
         ))}
+        {decision.reasons.map((r, i) => (
+          <li key={`r${i}`}>Plex says: {r}</li>
+        ))}
       </ul>
     </div>
   );
