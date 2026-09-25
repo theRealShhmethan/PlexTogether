@@ -15,9 +15,9 @@ media; PlexTogether handles rooms and synchronization.
 | 5 | Playback proof of concept (host, HLS via Plex's transcoder, progress saved to Plex) | ✅ implemented, **needs a real-server test** |
 | 6 | Rooms: invite link, join with a name, participants, ready, end, expiry | ✅ done — verified with two browsers |
 | 7 | Playback sync: Start Together, shared play/pause/seek with per-guest permissions, clock sync, drift correction | ✅ done — verified with two browsers after tuning |
-| 8 | Buffering pauses the room ("Waiting for …"), coordinated resume, stream/network recovery, auto-rejoin after reload, rooms survive restarts | ✅ implemented, **needs a real-world test** (buffering part verified) |
+| 8 | Buffering pauses the room ("Waiting for …"), coordinated resume, stream/network recovery, auto-rejoin after reload, rooms survive restarts | ✅ done |
 | — | Audio language and subtitle selection (per viewer, saved to their Plex account) | ✅ implemented, **needs a real-server test** |
-| — | Docker image + Synology deployment guide; browser picks the Plex address it can reach | ✅ implemented, **needs a NAS test** |
+| — | Docker image + Synology deployment guide (DSM reverse proxy or built-in Caddy); browser picks the Plex address it can reach | ✅ done — running on a Synology, verified host + remote guest on separate networks (2026-09-25) |
 | — | In-room: change title, next episode (auto-start), per-viewer quality, chat and reactions | ✅ implemented, **needs a two-browser test** |
 
 ### ⚠️ Guest mode limitation
