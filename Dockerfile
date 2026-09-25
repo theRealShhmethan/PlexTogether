@@ -25,6 +25,9 @@ COPY --from=build --chown=node:node /app/.next ./.next
 COPY --from=build /app/public ./public
 COPY --from=build /app/dist ./dist
 COPY next.config.ts ./
+# Files keep the permissions they had on the host (a NAS copy can end up owner-only),
+# so make the app's files world-readable; the app user can't read them otherwise.
+RUN chmod -R a+rX /app/public /app/dist /app/next.config.ts
 # Saved (encrypted) sessions and rooms live here — mount a volume.
 RUN mkdir -p /app/.data && chown -R node:node /app/.data
 USER node
