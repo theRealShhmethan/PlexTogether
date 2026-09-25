@@ -19,7 +19,9 @@ RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 # The custom server (server.ts + room code) is compiled to one plain JS file at build
 # time (npm run build → esbuild), so nothing TypeScript runs here. Next.js still reads
 # next.config.ts itself.
-COPY --from=build /app/.next ./.next
+# Next.js writes its cache under .next at runtime, so the app user must own it
+# (as in Next.js's own Docker example); everything else stays read-only root.
+COPY --from=build --chown=node:node /app/.next ./.next
 COPY --from=build /app/public ./public
 COPY --from=build /app/dist ./dist
 COPY next.config.ts ./
