@@ -16,15 +16,17 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
-# server.ts runs through tsx and imports src/lib (with "@/..." paths from tsconfig.json).
+# The custom server (server.ts + room code) is compiled to one plain JS file at build
+# time (npm run build → esbuild), so nothing TypeScript runs here. Next.js still reads
+# next.config.ts itself.
 COPY --from=build /app/.next ./.next
 COPY --from=build /app/public ./public
-COPY server.ts next.config.ts tsconfig.json ./
-COPY src ./src
+COPY --from=build /app/dist ./dist
+COPY next.config.ts ./
 # Saved (encrypted) sessions and rooms live here — mount a volume.
 RUN mkdir -p /app/.data && chown -R node:node /app/.data
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD wget -qO- http://127.0.0.1:3000/robots.txt >/dev/null || exit 1
-CMD ["npx", "--no-install", "tsx", "server.ts", "--production"]
+CMD ["node", "dist/server.cjs", "--production"]

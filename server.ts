@@ -4,7 +4,7 @@
  * documented custom-server setup is used.)
  *
  *   npm run dev    → development (hot reload)
- *   npm start      → production (run `npm run build` first)
+ *   npm start      → production: runs dist/server.cjs (`npm run build` compiles it with esbuild)
  */
 import { createServer } from "node:http";
 import { loadEnvConfig } from "@next/env";

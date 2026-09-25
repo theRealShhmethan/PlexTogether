@@ -4,13 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch --clear-screen=false --include ./server.ts server.ts",
-    "build": "next build",
-    "start": "tsx server.ts --production",
+    "build": "next build && npm run build:server",
+    "start": "node dist/server.cjs --production",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run lint && npm run test"
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "build:server": "esbuild server.ts --bundle --platform=node --target=node20 --format=cjs --packages=external --outfile=dist/server.cjs --log-level=warning"
   },
   "dependencies": {
     "hls.js": "^1.7.3",
@@ -19,7 +20,6 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
-    "tsx": "^4.23.15",
     "ws": "^8.21.3",
     "zod": "^4.6.5"
   },
@@ -28,8 +28,10 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/ws": "^8.18.1",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.0.1"
   },

@@ -4,6 +4,7 @@
 .data
 node_modules
 .next
+dist
 .git
 coverage
 *.log

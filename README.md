@@ -37,7 +37,7 @@ Watch Pass on the viewer's account, for remote video playback.
 - **Next.js 16 (App Router) + TypeScript**, one Node process.
 - Server-side Plex client in `src/lib/plex/` (auth, headers, response validation).
 - In-memory session store in `src/lib/session/`. There's no database yet.
-- `server.ts`: a custom Node server (run with `tsx`) that serves Next.js **and** the room WebSockets (`/ws/rooms/<id>`, via `ws`) on one port. Next.js route handlers can't hold WebSockets. Room state is in memory (`src/lib/rooms/hub.ts`).
+- `server.ts`: a custom Node server (run with `tsx` in dev, compiled to `dist/server.cjs` by esbuild for production) that serves Next.js **and** the room WebSockets (`/ws/rooms/<id>`, via `ws`) on one port. Next.js route handlers can't hold WebSockets. Room state is in memory (`src/lib/rooms/hub.ts`).
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full plan.
 

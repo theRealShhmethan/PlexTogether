@@ -55,3 +55,6 @@ Thumbs.db
 
 # saved (encrypted) sessions
 /.data/
+
+# compiled custom server
+/dist/
