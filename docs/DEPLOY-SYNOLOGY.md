@@ -28,7 +28,14 @@ The easiest way is **File Station**. On GitHub, open the repository → **Code �
 extract it into a folder such as `/docker/plextogether`, so that `docker-compose.yml` is directly
 inside it.
 
-If you have SSH enabled, you can instead run:
+Over SSH, you don't need Git. This downloads and unpacks the latest code into the current folder. Existing files are replaced, and your `.env` is kept because it isn't part of the download:
+
+```sh
+cd /volume1/docker/plextogether
+curl -L https://github.com/theRealShhmethan/PlexTogether/archive/refs/heads/main.tar.gz | tar xz --strip-components=1
+```
+
+Or, if you have Git installed:
 
 ```sh
 cd /volume1/docker
@@ -98,6 +105,7 @@ needs access to your library: share it from Plex → Settings → Manage Library
 
 ## Updating
 
+- **Over SSH (no Git needed):** run the `curl … | tar xz --strip-components=1` command from step 1 again in the folder, then `sudo docker compose up -d --build`.
 - **If you used the ZIP:** download the new ZIP and replace the files, but **keep your `.env`**.
 - **If you used git:** run `git pull` in the folder.
 
