@@ -1,6 +1,10 @@
 # PlexTogether on a Synology NAS (Container Manager → Project) or any Docker host.
 # 1. Copy .env.example to .env next to this file and fill in APP_URL and SESSION_SECRET.
-# 2. Put DSM's reverse proxy (HTTPS) in front — see docs/DEPLOY-SYNOLOGY.md.
+# 2. HTTPS in front, either:
+#    - DSM's reverse proxy (see docs/DEPLOY-SYNOLOGY.md), or
+#    - the built-in Caddy option (no DSM changes, works when port 80 is blocked):
+#        docker compose --profile caddy up -d --build
+#      with PUBLIC_HOST and ACME_EMAIL in .env, and the router's 443 → NAS 8443.
 services:
   plextogether:
     build: .
@@ -11,10 +15,30 @@ services:
     environment:
       NODE_ENV: production
     ports:
-      # Only reachable from the NAS itself; the HTTPS reverse proxy is the way in.
+      # Only reachable from the NAS itself; the HTTPS front is the way in.
       - "127.0.0.1:3000:3000"
     volumes:
       - plextogether-data:/app/.data
 
+  caddy:
+    profiles: ["caddy"]
+    image: caddy:2
+    container_name: plextogether-caddy
+    restart: unless-stopped
+    depends_on:
+      - plextogether
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    ports:
+      # Router: external 443 → NAS 8443.
+      - "8443:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
 volumes:
   plextogether-data:
+  caddy-data:
+  caddy-config:

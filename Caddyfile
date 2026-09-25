@@ -1,0 +1,29 @@
+# Optional HTTPS front for PlexTogether (docker compose --profile caddy).
+#
+# Use this instead of DSM's reverse proxy when you'd rather not touch DSM, or
+# when your ISP blocks inbound port 80: Caddy gets and renews its own
+# Let's Encrypt certificate using the TLS-ALPN challenge, which runs over
+# port 443. Forward the router's external 443 to this container's 8443.
+{
+	email {$ACME_EMAIL}
+	# Inside the container only; external 443 → NAS 8443 → here.
+	https_port 8443
+	http_port 8080
+	auto_https disable_redirects
+}
+
+{$PUBLIC_HOST} {
+	tls {
+		issuer acme {
+			# Port 80 may be blocked by the ISP — validate over 443 instead.
+			disable_http_challenge
+			alt_tlsalpn_port 8443
+		}
+	}
+	# WebSockets (rooms) are proxied automatically.
+	reverse_proxy plextogether:3000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}

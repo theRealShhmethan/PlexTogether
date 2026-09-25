@@ -71,6 +71,34 @@ Then click **Next → Done**. The first build takes a few minutes. When it finis
 `plextogether` container shows **Running**, and it's listening on the NAS itself at
 `http://localhost:3000`. It isn't reachable from outside yet, and it isn't meant to be.
 
+## HTTPS: two ways
+
+- **A. DSM's reverse proxy** (steps 4–5 below). This needs port **80** reachable from the internet for
+  Let's Encrypt.
+- **B. The built-in Caddy container** (next section). It doesn't touch DSM at all: no reverse proxy
+  and no DSM certificate. It works even when your **ISP blocks port 80** (common on home connections,
+  e.g. Cox), because Caddy validates the certificate over port 443 (TLS-ALPN).
+
+### Option B: Caddy (no DSM changes)
+
+1. Add these to `.env`, and keep `APP_URL=https://ebsi.ddns.net`:
+   ```ini
+   PUBLIC_HOST=ebsi.ddns.net
+   ACME_EMAIL=you@example.com
+   ```
+2. Start both containers:
+   ```sh
+   sudo docker compose --profile caddy up -d --build
+   ```
+3. On the router, forward external **443 → NAS port 8443** (TCP). Port 80 isn't needed.
+4. Watch Caddy get the certificate. You're looking for "certificate obtained successfully":
+   ```sh
+   sudo docker logs -f plextogether-caddy
+   ```
+5. Open `https://ebsi.ddns.net` from outside your network, e.g. a phone on cellular.
+
+Caddy renews the certificate by itself. Skip steps 4–5 below.
+
 ## 4. Get a certificate
 
 Control Panel → **Security → Certificate → Add → Add a new certificate → Get a certificate from
