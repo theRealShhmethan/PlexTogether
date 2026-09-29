@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { withToken } from "@/lib/client/tokenUrl";
-import { parseOffsetMs, reportTimeline, startPlayback, transcodeParams } from "./playback";
+import { parseOffsetMs, profileExtra, reportTimeline, startPlayback, transcodeParams } from "./playback";
 import type { PmsTarget } from "./pms";
 
 const target: PmsTarget = {
@@ -75,6 +75,15 @@ describe("transcodeParams", () => {
     });
     expect(transcodeParams({ ratingKey: "70", location: "wan", quality: "original" }, "s").videoBitrate).toBeUndefined();
     expect(transcodeParams({ ratingKey: "70", location: "wan", quality: "auto" }, "s").videoResolution).toBe("1920x1080");
+  });
+
+  it("downmixes to stereo by default, and keeps surround when asked", () => {
+    expect(transcodeParams({ ratingKey: "70", location: "lan" }, "s").audioChannelCount).toBe("2");
+    expect(transcodeParams({ ratingKey: "70", location: "lan", audio: "surround" }, "s").audioChannelCount).toBeUndefined();
+    const stereo = profileExtra({});
+    expect(stereo).toContain("add-limitation(scope=videoAudioCodec&scopeName=aac&type=upperBound&name=audio.channels&value=2)");
+    expect(stereo).toContain("scopeName=eac3");
+    expect(profileExtra({ audio: "surround" })).not.toContain("add-limitation");
   });
 
   it("rejects non-numeric ids", () => {

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getJson, postJson } from "@/lib/client/api";
-import type { Quality } from "@/lib/plex/playback";
+import type { AudioOutput, Quality } from "@/lib/plex/playback";
 import type { Track, Tracks } from "@/lib/plex/tracks";
 import { SubtitleSearch } from "./SubtitleSearch";
 
@@ -23,11 +23,15 @@ export function TrackMenu({
   onChanged,
   quality,
   onQuality,
+  audioOutput,
+  onAudioOutput,
 }: {
   apiBase: string;
   onChanged: () => Promise<void>;
   quality: Quality;
   onQuality: (q: Quality) => Promise<void>;
+  audioOutput: AudioOutput;
+  onAudioOutput: (a: AudioOutput) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [tracks, setTracks] = useState<Tracks | null>(null);
@@ -135,6 +139,21 @@ export function TrackMenu({
                 {tracks.subtitles.length === 0 ? "No subtitles — find some online…" : "Find more subtitles online…"}
               </button>
               <label className="track-field">
+                <span>Audio output</span>
+                <select
+                  value={audioOutput}
+                  disabled={busy}
+                  onChange={async (e) => {
+                    setBusy(true);
+                    await onAudioOutput(e.target.value as AudioOutput);
+                    setBusy(false);
+                  }}
+                >
+                  <option value="stereo">Stereo (headphones, laptop, TV)</option>
+                  <option value="surround">Surround 5.1 / 7.1 (home theater)</option>
+                </select>
+              </label>
+              <label className="track-field">
                 <span>Quality</span>
                 <select
                   value={quality}
@@ -153,7 +172,9 @@ export function TrackMenu({
                 </select>
               </label>
               <p className="muted small">
-                {busy ? "Switching…" : "Audio and subtitles are saved to your Plex account; quality to this browser."}
+                {busy
+                  ? "Switching…"
+                  : "Audio and subtitle tracks are saved to your Plex account; output and quality to this browser."}
               </p>
             </>
           )}

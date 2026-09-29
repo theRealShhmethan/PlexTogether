@@ -470,6 +470,8 @@ export function RoomPlayer(props: Props) {
               onChanged={stream.reloadHere}
               quality={stream.quality}
               onQuality={stream.setQuality}
+              audioOutput={stream.audioOutput}
+              onAudioOutput={stream.setAudioOutput}
             />
           }
         />

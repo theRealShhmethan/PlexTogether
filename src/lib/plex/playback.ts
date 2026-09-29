@@ -21,9 +21,26 @@ import type { PmsTarget } from "./pms";
  */
 
 /** H.264 + AAC in MPEG-TS over HLS: the lowest common denominator for Chrome/Edge/Safari via MSE. */
-const PROFILE_EXTRA = [
-  "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts&videoCodec=h264&audioCodec=aac&replace=true)",
-].join("+");
+const HLS_TARGET =
+  "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts&videoCodec=h264&audioCodec=aac&replace=true)";
+
+/** Audio codecs that could otherwise be copied through with their original (e.g. 5.1) channels. */
+const COPYABLE_AUDIO = ["aac", "ac3", "eac3"];
+
+/**
+ * Client-profile augmentation (documented "Profile Augmentations"). For stereo
+ * we cap audio channels at 2 on every copyable codec, using the documented
+ * add-limitation form, so Plex downmixes instead of passing 5.1 through.
+ */
+export function profileExtra(opts: Pick<PlaybackOptions, "audio">): string {
+  const parts = [HLS_TARGET];
+  if (opts.audio !== "surround") {
+    for (const codec of COPYABLE_AUDIO) {
+      parts.push(`add-limitation(scope=videoAudioCodec&scopeName=${codec}&type=upperBound&name=audio.channels&value=2)`);
+    }
+  }
+  return parts.join("+");
+}
 
 export type PlaybackOptions = {
   ratingKey: string;
@@ -37,7 +54,12 @@ export type PlaybackOptions = {
    */
   offsetMs?: number;
   quality?: Quality;
+  /** "stereo" (default) downmixes surround to 2 channels; "surround" keeps the original. */
+  audio?: AudioOutput;
 };
+
+export const AUDIO_OUTPUTS = ["stereo", "surround"] as const;
+export type AudioOutput = (typeof AUDIO_OUTPUTS)[number];
 
 /** Validates an offset from a browser: 0 to 24 h, in ms. */
 export function parseOffsetMs(value: unknown): number {
@@ -139,6 +161,8 @@ export function transcodeParams(opts: PlaybackOptions, sessionId: string): Recor
   };
   // Documented: "Offset from the start of the media (in seconds)".
   if (opts.offsetMs && opts.offsetMs > 0) params.offset = (Math.floor(opts.offsetMs / 100) / 10).toFixed(1);
+  // Documented: "Target video number of audio channels."
+  if (opts.audio !== "surround") params.audioChannelCount = "2";
   const cap = QUALITY_CAPS[opts.quality === "auto" || !opts.quality ? (opts.location === "wan" ? "1080" : "original") : opts.quality];
   if (cap) {
     params.videoBitrate = String(cap.videoKbps);
@@ -162,12 +186,12 @@ const QUALITY_CAPS: Record<Exclude<Quality, "auto">, { videoKbps: number; peakKb
   "480": { videoKbps: 1500, peakKbps: 2500, resolution: "854x480" },
 };
 
-function transcodeHeaders(target: PmsTarget, sessionId: string): Record<string, string> {
+function transcodeHeaders(target: PmsTarget, sessionId: string, extra: string): Record<string, string> {
   return {
     ...plexHeaders(target.client, target.token),
     // Documented: "Generally should only be used to specify the Generic profile."
     "X-Plex-Client-Profile-Name": "Generic",
-    "X-Plex-Client-Profile-Extra": PROFILE_EXTRA,
+    "X-Plex-Client-Profile-Extra": extra,
     "X-Plex-Session-Identifier": sessionId,
   };
 }
@@ -227,11 +251,12 @@ export async function startPlayback(
 ): Promise<PlaybackStart> {
   const sessionId = randomUUID();
   const params = transcodeParams(opts, sessionId);
+  const extra = profileExtra(opts);
 
   const raw = await plexRequest(
     "pms:decision",
     pmsUrl(target, "/video/:/transcode/universal/decision", params),
-    { method: "GET", headers: transcodeHeaders(target, sessionId) },
+    { method: "GET", headers: transcodeHeaders(target, sessionId, extra) },
     DecisionSchema,
   );
   const decision = summarizeDecision(raw);
@@ -248,7 +273,7 @@ export async function startPlayback(
     "X-Plex-Product": target.client.product,
     "X-Plex-Platform": "Web",
     "X-Plex-Client-Profile-Name": "Generic",
-    "X-Plex-Client-Profile-Extra": PROFILE_EXTRA,
+    "X-Plex-Client-Profile-Extra": extra,
     "X-Plex-Session-Identifier": sessionId,
   });
   return { sessionId, playlistUrl, transientToken, decision };

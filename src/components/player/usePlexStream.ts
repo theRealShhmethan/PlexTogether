@@ -4,7 +4,16 @@ import Hls from "hls.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { pickConnection, type Candidate } from "@/lib/client/probe";
 import { withToken } from "@/lib/client/tokenUrl";
-import type { PlaybackDecision, PlaybackStart, Quality, TimelineState } from "@/lib/plex/playback";
+import type { AudioOutput, PlaybackDecision, PlaybackStart, Quality, TimelineState } from "@/lib/plex/playback";
+
+const AUDIO_KEY = "pt_audio_output";
+function readAudio(): AudioOutput {
+  try {
+    return window.localStorage.getItem(AUDIO_KEY) === "surround" ? "surround" : "stereo";
+  } catch {
+    return "stereo";
+  }
+}
 
 const QUALITY_KEY = "pt_quality";
 function readQuality(): Quality {
@@ -56,9 +65,14 @@ export function usePlexStream(apiBase: string, knownDurationMs: number | null) {
   /** This browser's quality choice (remembered). */
   const [quality, setQualityState] = useState<Quality>("auto");
   const qualityRef = useRef<Quality>("auto");
+  /** Stereo (default: Plex downmixes 5.1) or surround (original channels), remembered. */
+  const [audioOutput, setAudioState] = useState<AudioOutput>("stereo");
+  const audioRef = useRef<AudioOutput>("stereo");
   useEffect(() => {
     qualityRef.current = readQuality();
     setQualityState(qualityRef.current);
+    audioRef.current = readAudio();
+    setAudioState(audioRef.current);
   }, []);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -150,6 +164,7 @@ export function usePlexStream(apiBase: string, knownDurationMs: number | null) {
           body: JSON.stringify({
             offsetMs: Math.max(0, Math.round(fromMs)),
             quality: qualityRef.current,
+            audio: audioRef.current,
             ...(connectionRef.current !== null ? { connectionIndex: connectionRef.current } : {}),
           }),
         });
@@ -317,12 +332,29 @@ export function usePlexStream(apiBase: string, knownDurationMs: number | null) {
     [reloadHere],
   );
 
+  /** Changes stereo/surround (remembered in this browser) and reloads in place if playing. */
+  const setAudioOutput = useCallback(
+    async (a: AudioOutput) => {
+      audioRef.current = a;
+      setAudioState(a);
+      try {
+        window.localStorage.setItem(AUDIO_KEY, a);
+      } catch {
+        /* not remembered, that's fine */
+      }
+      if (sessionRef.current) await reloadHere();
+    },
+    [reloadHere],
+  );
+
   return {
     videoRef,
     apiBase,
     reloadHere,
     quality,
     setQuality,
+    audioOutput,
+    setAudioOutput,
     phase,
     setPhase,
     load,

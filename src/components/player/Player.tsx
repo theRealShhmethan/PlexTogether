@@ -63,6 +63,8 @@ export function Player({ item }: { item: LibraryItem }) {
               onChanged={stream.reloadHere}
               quality={stream.quality}
               onQuality={stream.setQuality}
+              audioOutput={stream.audioOutput}
+              onAudioOutput={stream.setAudioOutput}
             />
           }
         />
