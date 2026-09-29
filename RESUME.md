@@ -11,7 +11,7 @@ project is deployed, which decisions matter, and what's left.
 
 ---
 
-## Status (last updated 2026-09-25)
+## Status (last updated 2026-09-28)
 
 **Everything in the original plan is built, deployed, and verified.** The host (Ethan) and a
 remote guest (Lexi), each on their own network, watched together in sync through
@@ -26,9 +26,9 @@ remote guest (Lexi), each on their own network, watched together in sync through
 | Buffering pauses the room ("Waiting for …"), coordinated resume, reconnect, rooms survive restarts | ✅ verified |
 | Subtitles/audio (English chosen automatically), quality picker, change title, next episode, chat and reactions | ✅ built; mostly verified |
 | Docker on the Synology NAS, HTTPS through Caddy, Let's Encrypt | ✅ live |
-| Find/download subtitles online through Plex, keyboard shortcuts (Space, ←/→, ↑/↓, F, M), auto-hiding control bar | ✅ built, **not yet tested on the real server; not pushed** |
+| Find/download subtitles online through Plex, keyboard shortcuts (Space, ←/→, ↑/↓, F, M), auto-hiding control bar, double-click fullscreen, audio output (stereo downmix by default / surround) | ✅ built and tested locally (incl. fullscreen); subtitle download permission and stereo downmix not yet checked on the NAS |
 
-Tests: `npm run check` runs typecheck, lint and about 111 Vitest tests. All pass.
+Tests: `npm run check` runs typecheck, lint and 121 Vitest tests (the player-controls tests run in jsdom). All pass.
 
 ## Where it runs
 
@@ -93,6 +93,7 @@ Tests: `npm run check` runs typecheck, lint and about 111 Vitest tests. All pass
   - `server.ts` is compiled by esbuild to `dist/server.cjs`, because tsx failed at runtime in Linux.
   - `.next` must be owned by the `node` user.
   - The build runs `chmod a+rX`, because files copied onto the NAS came out owner-only.
+- **Idle control bar fades to 1% opacity, not 0.** At 0, Chrome hands a fullscreen video to a hardware overlay, which on the host's GPU misplaced the picture and hid the bar for good.
 - **Persisted to `.data/`** (encrypted with `SESSION_SECRET`): sign-ins and rooms. Chat is memory-only.
 
 ## Ideas and TODO (priority order)
