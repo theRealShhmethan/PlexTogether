@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { formatTime } from "@/lib/format/time";
 
 type Props = {
@@ -16,6 +16,21 @@ type Props = {
   /** Extra controls (e.g. the audio/subtitle menu), placed before fullscreen. */
   extra?: ReactNode;
 };
+
+/** Hide the control bar (and cursor) after this long without mouse/keyboard activity. */
+const IDLE_HIDE_MS = 10_000;
+/** Arrow-key skips add up; the seek happens once the keys go quiet for this long. */
+const SKIP_COMMIT_MS = 500;
+const SKIP_MS = 10_000;
+const SKIP_BIG_MS = 30_000;
+
+/** Keys should do nothing while the user is typing (chat, search boxes, menus). */
+function isTyping(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
 
 /**
  * Custom controls in MEDIA time. The browser's built-in bar would show only
@@ -38,6 +53,120 @@ export function PlayerControls({
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [dragMs, setDragMs] = useState<number | null>(null);
+  const [flash, setFlash] = useState<{ id: number; text: string } | null>(null);
+  const [visible, setVisible] = useState(true);
+  const pendingSkip = useRef<number | null>(null);
+  const skipTimer = useRef<number | undefined>(undefined);
+  const idleTimer = useRef<number | undefined>(undefined);
+  const flashSeq = useRef(0);
+
+  // Latest props for the global key handler.
+  const live = useRef({ onTogglePlay, onSeek, mediaTimeMs, durationMs });
+  useEffect(() => {
+    live.current = { onTogglePlay, onSeek, mediaTimeMs, durationMs };
+  }, [onTogglePlay, onSeek, mediaTimeMs, durationMs]);
+
+  const showFlash = (text: string) => {
+    const id = ++flashSeq.current;
+    setFlash({ id, text });
+    window.setTimeout(() => setFlash((f) => (f?.id === id ? null : f)), 700);
+  };
+
+  /** Any activity shows the controls and restarts the 10 s hide timer. */
+  const poke = () => {
+    setVisible(true);
+    window.clearTimeout(idleTimer.current);
+    idleTimer.current = window.setTimeout(() => setVisible(false), IDLE_HIDE_MS);
+  };
+
+  // Mouse/touch activity over the player.
+  useEffect(() => {
+    const box = containerRef.current;
+    if (!box) return;
+    const onActivity = () => poke();
+    box.addEventListener("mousemove", onActivity);
+    box.addEventListener("pointerdown", onActivity);
+    box.addEventListener("touchstart", onActivity, { passive: true });
+    poke();
+    return () => {
+      box.removeEventListener("mousemove", onActivity);
+      box.removeEventListener("pointerdown", onActivity);
+      box.removeEventListener("touchstart", onActivity);
+      window.clearTimeout(idleTimer.current);
+    };
+     
+  }, [containerRef]);
+
+  // Hidden only while playing (never while paused), via a class on the player box.
+  const hidden = !visible && !paused && dragMs === null;
+  useEffect(() => {
+    containerRef.current?.classList.toggle("idle", hidden);
+  }, [hidden, containerRef]);
+
+  // Keyboard shortcuts: Space/K play-pause, ←/→ (J/L) skip 10 s (Shift: 30 s),
+  // ↑/↓ volume, F fullscreen, M mute.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
+      const v = videoRef.current;
+      if (!v) return;
+      const { onTogglePlay: toggle, onSeek: seek, mediaTimeMs: nowMs, durationMs: totalMs } = live.current;
+      const key = e.key;
+      const skip = (delta: number) => {
+        if (!seek) return;
+        const base = pendingSkip.current ?? nowMs();
+        const total = totalMs() ?? Number.MAX_SAFE_INTEGER;
+        const target = Math.min(Math.max(0, base + delta), Math.max(0, total - 1000));
+        pendingSkip.current = target;
+        setDragMs(target);
+        showFlash(`${delta > 0 ? "»" : "«"} ${formatTime(target)}`);
+        window.clearTimeout(skipTimer.current);
+        skipTimer.current = window.setTimeout(() => {
+          const t = pendingSkip.current;
+          pendingSkip.current = null;
+          setDragMs(null);
+          if (t !== null) seek(t);
+        }, SKIP_COMMIT_MS);
+      };
+
+      if (key === " " || key === "k" || key === "K") {
+        // A focused button already handles Space itself.
+        if (key === " " && e.target instanceof HTMLButtonElement) return;
+        if (!toggle) return;
+        e.preventDefault();
+        showFlash(v.paused ? "▶" : "❚❚");
+        toggle();
+      } else if (key === "ArrowLeft" || key === "j" || key === "J") {
+        if (!seek) return;
+        e.preventDefault();
+        skip(-(e.shiftKey ? SKIP_BIG_MS : SKIP_MS));
+      } else if (key === "ArrowRight" || key === "l" || key === "L") {
+        if (!seek) return;
+        e.preventDefault();
+        skip(e.shiftKey ? SKIP_BIG_MS : SKIP_MS);
+      } else if (key === "ArrowUp" || key === "ArrowDown") {
+        e.preventDefault();
+        v.volume = Math.min(1, Math.max(0, Math.round((v.volume + (key === "ArrowUp" ? 0.05 : -0.05)) * 100) / 100));
+        v.muted = v.volume === 0;
+        showFlash(`🔊 ${Math.round(v.volume * 100)}%`);
+      } else if (key === "m" || key === "M") {
+        v.muted = !v.muted;
+        showFlash(v.muted ? "🔇" : "🔊");
+      } else if (key === "f" || key === "F") {
+        if (document.fullscreenElement) void document.exitFullscreen();
+        else void containerRef.current?.requestFullscreen();
+      } else {
+        return;
+      }
+      poke();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.clearTimeout(skipTimer.current);
+    };
+     
+  }, [videoRef, containerRef]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -65,61 +194,66 @@ export function PlayerControls({
 
   const shown = dragMs ?? now;
   return (
-    <div className="controls">
-      <button
-        className="ctl"
-        onClick={() => onTogglePlay?.()}
-        disabled={!onTogglePlay}
-        aria-label={paused ? "Play" : "Pause"}
-        title={onTogglePlay ? undefined : "The host controls playback"}
-      >
-        {paused ? "▶" : "❚❚"}
-      </button>
-      <input
-        className="seek"
-        type="range"
-        min={0}
-        max={total ?? 0}
-        step={1000}
-        value={Math.min(shown, total ?? shown)}
-        disabled={!onSeek || !total}
-        aria-label="Seek"
-        onChange={(e) => setDragMs(Number(e.target.value))}
-        onPointerUp={commit}
-        onKeyUp={commit}
-      />
-      <span className="time">
-        {busyLabel ?? `${formatTime(shown)} / ${total ? formatTime(total) : "--:--"}`}
-      </span>
-      <button
-        className="ctl"
-        onClick={() => {
-          const v = videoRef.current;
-          if (v) v.muted = !v.muted;
-        }}
-        aria-label={muted ? "Unmute" : "Mute"}
-      >
-        {muted || volume === 0 ? "🔇" : "🔊"}
-      </button>
-      <input
-        className="volume"
-        type="range"
-        min={0}
-        max={1}
-        step={0.05}
-        value={muted ? 0 : volume}
-        aria-label="Volume"
-        onChange={(e) => {
-          const v = videoRef.current;
-          if (!v) return;
-          v.volume = Number(e.target.value);
-          v.muted = v.volume === 0;
-        }}
-      />
-      {extra}
-      <button className="ctl" onClick={toggleFullscreen} aria-label="Fullscreen">
-        ⛶
-      </button>
-    </div>
+    <>
+      {flash && (
+        <div key={flash.id} className="key-flash" aria-hidden="true">
+          {flash.text}
+        </div>
+      )}
+      <div className="controls">
+        <button
+          className="ctl"
+          onClick={() => onTogglePlay?.()}
+          disabled={!onTogglePlay}
+          aria-label={paused ? "Play" : "Pause"}
+          title={onTogglePlay ? undefined : "The host controls playback"}
+        >
+          {paused ? "▶" : "❚❚"}
+        </button>
+        <input
+          className="seek"
+          type="range"
+          min={0}
+          max={total ?? 0}
+          step={1000}
+          value={Math.min(shown, total ?? shown)}
+          disabled={!onSeek || !total}
+          aria-label="Seek"
+          onChange={(e) => setDragMs(Number(e.target.value))}
+          onPointerUp={commit}
+          onKeyUp={commit}
+        />
+        <span className="time">{busyLabel ?? `${formatTime(shown)} / ${total ? formatTime(total) : "--:--"}`}</span>
+        <button
+          className="ctl"
+          onClick={() => {
+            const v = videoRef.current;
+            if (v) v.muted = !v.muted;
+          }}
+          aria-label={muted ? "Unmute" : "Mute"}
+        >
+          {muted || volume === 0 ? "🔇" : "🔊"}
+        </button>
+        <input
+          className="volume"
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={muted ? 0 : volume}
+          aria-label="Volume"
+          onChange={(e) => {
+            const v = videoRef.current;
+            if (!v) return;
+            v.volume = Number(e.target.value);
+            v.muted = v.volume === 0;
+          }}
+        />
+        {extra}
+        <button className="ctl" onClick={toggleFullscreen} aria-label="Fullscreen">
+          ⛶
+        </button>
+      </div>
+    </>
   );
 }

@@ -146,3 +146,137 @@ export function preferredAudio(tracks: Tracks, prefs: string[]): number | null {
   const candidate = tracks.audio.find((t) => matches(t) && !/commentary/i.test(t.label));
   return candidate && candidate.id !== selected?.id ? candidate.id : null;
 }
+
+// ---------------------------------------------------------------------------
+// Finding subtitles online (Plex's subtitle search, as in Plex's own apps).
+//
+// UNDOCUMENTED: the official PMS spec lists /library/metadata/{id}/subtitles
+// only for adding a subtitle you already have. Plex's apps (and
+// python-plexapi's searchSubtitles/downloadSubtitles) use it to search:
+//   GET /library/metadata/{id}/subtitles?language=en&hearingImpaired=0&forced=0
+// and to download a result:
+//   PUT /library/metadata/{id}/subtitles?key=<result key>
+// The download is asynchronous; the new track appears on the item shortly after.
+// See https://support.plex.tv/articles/subtitle-search/. Responses are
+// validated loosely; anything unexpected fails with a clear error.
+// ---------------------------------------------------------------------------
+
+export type SubtitleResult = {
+  title: string;
+  language: string | null;
+  provider: string | null;
+  score: number | null;
+  hearingImpaired: boolean;
+  forced: boolean;
+  perfectMatch: boolean;
+};
+
+const SearchResultSchema = z
+  .object({
+    key: z.string().min(1).max(2048),
+    displayTitle: z.string().optional(),
+    title: z.string().optional(),
+    language: z.string().optional(),
+    languageCode: z.string().optional(),
+    providerTitle: z.string().optional(),
+    score: z.coerce.number().optional(),
+    hearingImpaired: z.union([z.boolean(), z.number(), z.string()]).optional(),
+    forced: z.union([z.boolean(), z.number(), z.string()]).optional(),
+    perfectMatch: z.union([z.boolean(), z.number(), z.string()]).optional(),
+  })
+  .loose();
+
+const SearchResponseSchema = z.object({
+  MediaContainer: z
+    .object({ Stream: z.array(z.unknown()).default([]), Metadata: z.array(z.unknown()).default([]) })
+    .loose(),
+});
+
+const truthy = (v: unknown) => v === true || v === 1 || v === "1" || v === "true";
+
+/** Two-letter language codes offered in the search (ISO 639-1, as Plex expects). */
+export const SUBTITLE_LANGUAGES = [
+  "en", "es", "fr", "de", "it", "pt", "nl", "sv", "no", "da", "fi", "pl",
+  "tr", "ru", "ar", "he", "hi", "ja", "ko", "zh", "vi", "th", "id", "el",
+] as const;
+
+/**
+ * Searches for subtitles. Returns results for display plus their keys, which
+ * the caller keeps server-side (the browser only ever refers to results by index).
+ */
+export async function searchSubtitles(
+  target: PmsTarget,
+  ratingKey: string,
+  opts: { language: string; hearingImpaired: boolean },
+): Promise<{ results: SubtitleResult[]; keys: string[] }> {
+  const id = PlexIdSchema.parse(ratingKey);
+  const res = await pmsGet(target, "subtitle-search", `/library/metadata/${id}/subtitles`, SearchResponseSchema, {
+    // hearingImpaired: 0 = prefer non-SDH, 1 = prefer SDH (python-plexapi's documented values).
+    query: { language: opts.language, hearingImpaired: opts.hearingImpaired ? "1" : "0", forced: "0" },
+  });
+  const raw = [...res.MediaContainer.Stream, ...res.MediaContainer.Metadata];
+  const parsed = raw
+    .map((r) => SearchResultSchema.safeParse(r))
+    .flatMap((r) => (r.success ? [r.data] : []))
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    .slice(0, 25);
+  return {
+    keys: parsed.map((r) => r.key),
+    results: parsed.map((r) => ({
+      title: r.displayTitle || r.title || "Subtitle",
+      language: r.languageCode ?? r.language ?? null,
+      provider: r.providerTitle ?? null,
+      score: typeof r.score === "number" && Number.isFinite(r.score) ? r.score : null,
+      hearingImpaired: truthy(r.hearingImpaired),
+      forced: truthy(r.forced),
+      perfectMatch: truthy(r.perfectMatch),
+    })),
+  };
+}
+
+export type DownloadResult = { ok: true; tracks: Tracks; newTrackId: number | null } | { ok: false; error: string };
+
+/**
+ * Asks Plex to download a search result and attach it to the item, then
+ * waits (up to `waitMs`) for the new subtitle track and selects it.
+ */
+export async function downloadSubtitle(
+  target: PmsTarget,
+  ratingKey: string,
+  resultKey: string,
+  waitMs = 20_000,
+): Promise<DownloadResult> {
+  const id = PlexIdSchema.parse(ratingKey);
+  const before = new Set((await getTracks(target, ratingKey)).subtitles.map((t) => t.id));
+  const url = `${target.baseUrl.replace(/\/+$/, "")}/library/metadata/${id}/subtitles?${new URLSearchParams({ key: resultKey })}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "PUT",
+      headers: plexHeaders(target.client, target.token),
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new PlexApiError("pms:subtitle-download", null, "Could not reach Plex");
+  }
+  await res.body?.cancel();
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, error: "Plex didn't allow this account to add subtitles (usually only the server's owner can)." };
+  }
+  if (!res.ok) throw new PlexApiError("pms:subtitle-download", res.status, `Plex returned HTTP ${res.status}`);
+
+  // The download finishes in the background; poll for the new track.
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const tracks = await getTracks(target, ratingKey);
+    const added = tracks.subtitles.find((t) => !before.has(t.id));
+    if (added) {
+      const selected = await setTracks(target, ratingKey, { subtitleStreamId: added.id });
+      return { ok: true, tracks: selected.ok ? selected.tracks : tracks, newTrackId: added.id };
+    }
+  }
+  return { ok: true, tracks: await getTracks(target, ratingKey), newTrackId: null };
+}

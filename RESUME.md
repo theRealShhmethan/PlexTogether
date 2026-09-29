@@ -26,6 +26,7 @@ remote guest (Lexi), each on their own network, watched together in sync through
 | Buffering pauses the room ("Waiting for …"), coordinated resume, reconnect, rooms survive restarts | ✅ verified |
 | Subtitles/audio (English chosen automatically), quality picker, change title, next episode, chat and reactions | ✅ built; mostly verified |
 | Docker on the Synology NAS, HTTPS through Caddy, Let's Encrypt | ✅ live |
+| Find/download subtitles online through Plex, keyboard shortcuts (Space, ←/→, ↑/↓, F, M), auto-hiding control bar | ✅ built, **not yet tested on the real server; not pushed** |
 
 Tests: `npm run check` runs typecheck, lint and about 111 Vitest tests. All pass.
 

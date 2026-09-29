@@ -1168,3 +1168,127 @@ details.stream-info[open] summary {
   box-shadow: var(--shadow);
   font-size: 0.9rem;
 }
+
+/* ---------- subtitle search ---------- */
+
+.track-popover:has(.subtitle-search) {
+  width: 360px;
+}
+
+.subtitle-search {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.subtitle-search select {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.subtitle-results {
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.subtitle-results li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.subtitle-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.subtitle-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+}
+
+/* ---------- overlay controls: auto-hide & key feedback ---------- */
+
+/* The bar sits over the bottom of the video (like Plex) so it can fade away. */
+.video-box .controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  border-top: none;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.78) 55%);
+  padding: 28px 14px 10px;
+  transition: opacity 0.35s ease;
+}
+
+/* After 10 s without activity while playing: hide the bar and the cursor.
+   Stays visible while a menu (audio/subtitles) is open. */
+.video-box.idle {
+  cursor: none;
+}
+
+.video-box.idle .controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.video-box.idle:has(.track-popover) {
+  cursor: auto;
+}
+
+.video-box.idle:has(.track-popover) .controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Brief centre indicator for keyboard actions (play/pause, skip target, volume). */
+.key-flash {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 6;
+  transform: translate(-50%, -50%);
+  padding: 12px 20px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 1.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: key-flash 0.7s ease-out forwards;
+}
+
+@keyframes key-flash {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}

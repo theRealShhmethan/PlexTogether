@@ -3,7 +3,14 @@ import { z } from "zod";
 import { getConfig } from "@/lib/config";
 import { isSameOrigin, jsonError } from "@/lib/http/security";
 import { parseOffsetMs, QUALITIES, startPlayback } from "@/lib/plex/playback";
-import { getTracks, preferredAudio, setTracks } from "@/lib/plex/tracks";
+import {
+  downloadSubtitle,
+  getTracks,
+  preferredAudio,
+  searchSubtitles,
+  setTracks,
+  SUBTITLE_LANGUAGES,
+} from "@/lib/plex/tracks";
 import { saveSession, type HostSession } from "@/lib/session/store";
 import type { PmsTarget } from "@/lib/plex/pms";
 import { noStore, pmsErrorResponse } from "./target";
@@ -119,5 +126,47 @@ export async function handleSetTracks(request: Request, roomId: string | null): 
     return Response.json(result.tracks, { headers: noStore });
   } catch (err) {
     return pmsErrorResponse(err, "the track selection");
+  }
+}
+
+/** GET subtitles?language=en&sdh=1: search for subtitles online (through Plex). */
+export async function handleSearchSubtitles(request: Request, roomId: string | null): Promise<Response> {
+  const sp = new URL(request.url).searchParams;
+  const language = z.enum(SUBTITLE_LANGUAGES).catch("en").parse(sp.get("language"));
+  const viewer = await resolveViewer(roomId);
+  if (viewer instanceof Response) return viewer;
+  try {
+    const { results, keys } = await searchSubtitles(viewer.target, viewer.ratingKey, {
+      language,
+      hearingImpaired: sp.get("sdh") === "1",
+    });
+    viewer.session.subtitleSearch = { ratingKey: viewer.ratingKey, keys };
+    saveSession(viewer.session);
+    return Response.json({ results }, { headers: noStore });
+  } catch (err) {
+    return pmsErrorResponse(err, "subtitle search results");
+  }
+}
+
+const DownloadBody = z.object({ index: z.number().int().min(0).max(99) });
+
+/** POST subtitles {index}: download a result from this viewer's last search and switch to it. */
+export async function handleDownloadSubtitle(request: Request, roomId: string | null): Promise<Response> {
+  if (!isSameOrigin(request, getConfig().appOrigin)) return jsonError(403, "Cross-origin request rejected");
+  const body = DownloadBody.safeParse(await request.json().catch(() => null));
+  if (!body.success) return jsonError(400, "Invalid subtitle choice");
+  const viewer = await resolveViewer(roomId);
+  if (viewer instanceof Response) return viewer;
+  const search = viewer.session.subtitleSearch;
+  const key = search?.ratingKey === viewer.ratingKey ? search.keys[body.data.index] : undefined;
+  if (!key) return jsonError(409, "Search again — those results are out of date.");
+  try {
+    const result = await downloadSubtitle(viewer.target, viewer.ratingKey, key);
+    if (!result.ok) return jsonError(403, result.error);
+    if (result.newTrackId !== null) rememberTrackPref(viewer.session, viewer.ratingKey, "manual");
+    saveSession(viewer.session);
+    return Response.json(result, { headers: noStore });
+  } catch (err) {
+    return pmsErrorResponse(err, "the subtitle download");
   }
 }

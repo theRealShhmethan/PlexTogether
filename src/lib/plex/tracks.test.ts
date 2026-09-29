@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { pickConnection, type Candidate } from "@/lib/client/probe";
 import type { PmsTarget } from "./pms";
-import { getTracks, preferredAudio, setTracks, type Tracks } from "./tracks";
+import { downloadSubtitle, getTracks, preferredAudio, searchSubtitles, setTracks, type Tracks } from "./tracks";
 
 const target: PmsTarget = {
   client: { clientIdentifier: "cid", product: "PlexTogether", version: "0.1.0" },
@@ -139,5 +139,57 @@ describe("preferredAudio", () => {
 
   it("matches by label when Plex has no language code", () => {
     expect(preferredAudio(tracks([{ label: "Español", selected: true }, { label: "English (AAC)" }]), prefs)).toBe(2);
+  });
+});
+
+describe("subtitle search & download", () => {
+  const results = {
+    MediaContainer: {
+      Stream: [
+        { key: "/sub/low", displayTitle: "Movie.2010.WEB", languageCode: "en", providerTitle: "OpenSubtitles", score: 40 },
+        { key: "/sub/best", displayTitle: "Movie.2010.BluRay", languageCode: "en", providerTitle: "OpenSubtitles", score: 95, perfectMatch: "1" },
+        { displayTitle: "no key — dropped" },
+      ],
+    },
+  };
+
+  it("searches through Plex, sorts by score, and keeps keys separate from what the browser sees", async () => {
+    const fn = vi.fn(async () => Response.json(results));
+    vi.stubGlobal("fetch", fn);
+    const r = await searchSubtitles(target, "70", { language: "en", hearingImpaired: false });
+    expect(r.keys).toEqual(["/sub/best", "/sub/low"]);
+    expect(r.results[0]).toMatchObject({ title: "Movie.2010.BluRay", perfectMatch: true, score: 95 });
+    expect(JSON.stringify(r.results)).not.toContain("/sub/");
+    const u = new URL((fn.mock.calls as unknown as [string][])[0][0]);
+    expect(u.pathname).toBe("/library/metadata/70/subtitles");
+    expect(Object.fromEntries(u.searchParams)).toEqual({ language: "en", hearingImpaired: "0", forced: "0" });
+  });
+
+  it("downloads a result, waits for the new track, and selects it", async () => {
+    let calls = 0;
+    const withNew = structuredClone(metadata);
+    withNew.MediaContainer.Metadata[0].Media[0].Part[0].Stream.push({ id: 9, streamType: 3, displayTitle: "English (SRT)" } as never);
+    const fn = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "PUT") return new Response(null, { status: 200 });
+      calls++;
+      return Response.json(calls === 1 ? metadata : withNew);
+    });
+    vi.stubGlobal("fetch", fn);
+    const r = await downloadSubtitle(target, "70", "/sub/best", 5000);
+    expect(r).toMatchObject({ ok: true, newTrackId: 9 });
+    const puts = (fn.mock.calls as unknown as [string, RequestInit?][]).filter(([, i]) => i?.method === "PUT").map(([u]) => new URL(u));
+    expect(puts[0].pathname).toBe("/library/metadata/70/subtitles");
+    expect(puts[0].searchParams.get("key")).toBe("/sub/best");
+    expect(puts[1].pathname).toBe("/library/parts/555"); // then selected
+    expect(puts[1].searchParams.get("subtitleStreamID")).toBe("9");
+  });
+
+  it("explains when Plex doesn't allow adding subtitles", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_u: string, init?: RequestInit) => (init?.method === "PUT" ? new Response(null, { status: 403 }) : Response.json(metadata))),
+    );
+    const r = await downloadSubtitle(target, "70", "/sub/best", 100);
+    expect(r).toEqual({ ok: false, error: expect.stringMatching(/owner/) });
   });
 });

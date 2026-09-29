@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { getJson, postJson } from "@/lib/client/api";
 import type { Quality } from "@/lib/plex/playback";
 import type { Track, Tracks } from "@/lib/plex/tracks";
+import { SubtitleSearch } from "./SubtitleSearch";
 
 const QUALITY_LABELS: Record<Quality, string> = {
   auto: "Auto (best for your connection)",
@@ -32,6 +33,7 @@ export function TrackMenu({
   const [tracks, setTracks] = useState<Tracks | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [finding, setFinding] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -70,14 +72,33 @@ export function TrackMenu({
 
   return (
     <div className="track-menu" ref={ref}>
-      <button className="ctl" onClick={() => setOpen((o) => !o)} aria-label="Audio, subtitles and quality" aria-expanded={open}>
+      <button
+        className="ctl"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Audio, subtitles and quality"
+        aria-expanded={open}
+      >
         <span className="cc">CC</span>
       </button>
       {open && (
         <div className="track-popover" role="dialog" aria-label="Audio and subtitles">
-          {!tracks && !error && <p className="muted small">Loading tracks…</p>}
+          {finding && (
+            <SubtitleSearch
+              apiBase={apiBase}
+              onClose={() => setFinding(false)}
+              onDownloaded={async (t, newId) => {
+                setTracks(t);
+                if (newId !== null) {
+                  // Plex attached and selected it; reload the stream to show it.
+                  await onChanged();
+                  setFinding(false);
+                }
+              }}
+            />
+          )}
+          {!finding && !tracks && !error && <p className="muted small">Loading tracks…</p>}
           {error && <p className="error small">{error}</p>}
-          {tracks && (
+          {!finding && tracks && (
             <>
               <label className="track-field">
                 <span>Audio</span>
@@ -110,6 +131,9 @@ export function TrackMenu({
                   ))}
                 </select>
               </label>
+              <button className="link-button small" onClick={() => setFinding(true)} disabled={busy}>
+                {tracks.subtitles.length === 0 ? "No subtitles — find some online…" : "Find more subtitles online…"}
+              </button>
               <label className="track-field">
                 <span>Quality</span>
                 <select

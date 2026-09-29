@@ -26,7 +26,8 @@ function persistable(sessions: HostSession[]) {
     sessions
       .filter((s) => s.plex.mode === "legacy")
       // The server list is a cache (and full of tokens); it's re-fetched on demand.
-      .map((s) => ({ ...s, servers: undefined }))
+      // Subtitle search results are short-lived.
+      .map((s) => ({ ...s, servers: undefined, subtitleSearch: undefined }))
   );
 }
 

@@ -51,6 +51,11 @@ export type HostSession = {
    * (never auto-switch again), "auto" once we auto-selected their language.
    */
   trackPrefs?: Record<string, "auto" | "manual">;
+  /**
+   * Keys from this viewer's last subtitle search (server-side only; the browser
+   * picks a result by index, so it can't hand Plex arbitrary keys).
+   */
+  subtitleSearch?: { ratingKey: string; keys: string[] };
   /** The host's current Plex playback session, if any. */
   playback?: { sessionId: string; ratingKey: string; durationMs: number | null; startedAt: number };
 };
