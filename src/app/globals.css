@@ -1257,6 +1257,17 @@ details.stream-info[open] summary {
   opacity: 1;
 }
 
+/* Pointing at the bar (or tabbing into it) always shows it, whatever the idle
+   timer thinks — pure CSS, so it can never get stuck invisible. */
+.video-box .controls:hover,
+.video-box .controls:focus-within {
+  opacity: 1;
+}
+
+.video-box.idle .controls:hover {
+  cursor: auto;
+}
+
 /* Brief centre indicator for keyboard actions (play/pause, skip target, volume). */
 .key-flash {
   position: absolute;
