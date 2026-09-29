@@ -9,8 +9,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en">
-      <body>
+    // Browser extensions (password managers etc.) add attributes to <html>/<body>
+    // before React loads; don't treat those as errors. Only affects these two tags.
+    <html lang="en" suppressHydrationWarning>
+      <body suppressHydrationWarning>
         <TopBar />
         <main className="container">{children}</main>
       </body>
