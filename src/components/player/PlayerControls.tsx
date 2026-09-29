@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { formatTime } from "@/lib/format/time";
+import { toggleFullscreen as toggleFs } from "./useVideoClicks";
 
 type Props = {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -198,10 +199,7 @@ export function PlayerControls({
     setDragMs(null);
   };
 
-  const toggleFullscreen = () => {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void containerRef.current?.requestFullscreen();
-  };
+  const toggleFullscreen = () => toggleFs(containerRef.current);
 
   const shown = dragMs ?? now;
   return (

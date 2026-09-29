@@ -5,6 +5,7 @@ import { DecisionSummary } from "@/components/player/DecisionSummary";
 import { PlayerControls } from "@/components/player/PlayerControls";
 import { TrackMenu } from "@/components/player/TrackMenu";
 import { usePlexStream } from "@/components/player/usePlexStream";
+import { useVideoClicks } from "@/components/player/useVideoClicks";
 import { SignInButton } from "@/components/SignInButton";
 import type { ClientMessage, Permissions } from "@/lib/rooms/protocol";
 import type { FloatingReaction } from "./useRoomSocket";
@@ -305,6 +306,8 @@ export function RoomPlayer(props: Props) {
     }
   }
 
+  const videoClicks = useVideoClicks(togglePlay, containerRef);
+
   async function seek(ms: number) {
     const v = videoRef.current;
     if (!v || !canSeek) return;
@@ -441,7 +444,7 @@ export function RoomPlayer(props: Props) {
           ref={videoRef}
           className="video"
           playsInline
-          onClick={togglePlay}
+          {...videoClicks}
           onPlay={videoEvents.onPlay}
           onPause={videoEvents.onPause}
           onEnded={videoEvents.onEnded}

@@ -7,6 +7,7 @@ import { DecisionSummary } from "./DecisionSummary";
 import { PlayerControls } from "./PlayerControls";
 import { TrackMenu } from "./TrackMenu";
 import { usePlexStream } from "./usePlexStream";
+import { useVideoClicks } from "./useVideoClicks";
 
 /** Solo host player for the watch-party pick (/watch). */
 export function Player({ item }: { item: LibraryItem }) {
@@ -42,13 +43,15 @@ export function Player({ item }: { item: LibraryItem }) {
     if (wasPlaying) void videoRef.current?.play().catch(() => {});
   }
 
+  const videoClicks = useVideoClicks(togglePlay, containerRef);
+
   const resumeMs = item.viewOffsetMs && item.viewOffsetMs > 60_000 ? item.viewOffsetMs : null;
   const loaded = phase.kind === "loaded";
 
   return (
     <div className="player">
       <div ref={containerRef} className={loaded ? "video-box" : "video-box hidden"}>
-        <video ref={videoRef} className="video" playsInline onClick={togglePlay} {...videoEvents} />
+        <video ref={videoRef} className="video" playsInline {...videoClicks} {...videoEvents} />
         <PlayerControls
           videoRef={videoRef}
           containerRef={containerRef}

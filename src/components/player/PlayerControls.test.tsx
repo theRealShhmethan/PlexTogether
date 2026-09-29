@@ -83,3 +83,35 @@ describe("PlayerControls auto-hide", () => {
     expect(getByTestId("box").classList.contains("idle")).toBe(false);
   });
 });
+
+describe("video clicks", () => {
+  it("single click toggles play after a short wait; double-click goes fullscreen without toggling play", async () => {
+    vi.useFakeTimers();
+    const { useVideoClicks } = await import("./useVideoClicks");
+    const toggle = vi.fn();
+    const requestFullscreen = vi.fn(async () => {});
+    function Clicks() {
+      const box = useRef<HTMLDivElement>(null);
+      const handlers = useVideoClicks(toggle, box);
+      return (
+        <div ref={box} data-testid="fsbox">
+          <video data-testid="v" {...handlers} />
+        </div>
+      );
+    }
+    const { getByTestId } = render(<Clicks />);
+    (getByTestId("fsbox") as HTMLDivElement).requestFullscreen = requestFullscreen;
+
+    fireEvent.click(getByTestId("v"));
+    expect(toggle).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(300));
+    expect(toggle).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(getByTestId("v"));
+    fireEvent.click(getByTestId("v"));
+    fireEvent.doubleClick(getByTestId("v"));
+    act(() => vi.advanceTimersByTime(300));
+    expect(toggle).toHaveBeenCalledTimes(1); // unchanged
+    expect(requestFullscreen).toHaveBeenCalledTimes(1);
+  });
+});
