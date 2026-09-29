@@ -180,18 +180,24 @@ export function PlayerControls({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- poke/props are read through refs and stable setters
   }, [videoRef, containerRef]);
 
+  const wasPaused = useRef(true);
   useEffect(() => {
     const id = window.setInterval(() => {
       const v = videoRef.current;
       setNow(mediaTimeMs());
       setTotal(durationMs());
       if (v) {
+        // Playback (re)starting — after a seek, pause or reload — gives a fresh
+        // 10 s before the bar hides, rather than hiding at once.
+        if (wasPaused.current && !v.paused) poke();
+        wasPaused.current = v.paused;
         setPaused(v.paused);
         setMuted(v.muted);
         setVolume(v.volume);
       }
     }, 250);
     return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- poke only uses refs and setters
   }, [videoRef, mediaTimeMs, durationMs]);
 
   const commit = () => {

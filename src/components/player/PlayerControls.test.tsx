@@ -76,6 +76,25 @@ describe("PlayerControls auto-hide", () => {
     expect(getByTestId("box").classList.contains("idle")).toBe(true);
   });
 
+  it("gives a fresh 10 s when playback starts again (e.g. after a seek)", () => {
+    vi.useFakeTimers();
+    const { getByTestId } = render(<Harness onToggle={() => {}} />);
+    const video = getByTestId("video") as HTMLVideoElement;
+    let paused = true;
+    Object.defineProperty(video, "paused", { configurable: true, get: () => paused });
+    // Paused (e.g. reloading after a seek) for longer than the hide delay…
+    act(() => vi.advanceTimersByTime(15_000));
+    expect(getByTestId("box").classList.contains("idle")).toBe(false);
+    // …then playback starts: the bar stays for another ~10 s, not hiding at once.
+    paused = false;
+    act(() => vi.advanceTimersByTime(1000));
+    expect(getByTestId("box").classList.contains("idle")).toBe(false);
+    act(() => vi.advanceTimersByTime(8000));
+    expect(getByTestId("box").classList.contains("idle")).toBe(false);
+    act(() => vi.advanceTimersByTime(2000));
+    expect(getByTestId("box").classList.contains("idle")).toBe(true);
+  });
+
   it("never hides while paused", () => {
     vi.useFakeTimers();
     const { getByTestId } = render(<Harness onToggle={() => {}} />);
