@@ -22,7 +22,12 @@ export type Track = {
   selected: boolean;
   /** Subtitles only: stored as a separate file rather than inside the video. */
   external?: boolean;
+  /** Subtitles only: pictures, not text (PGS, VobSub…) — Plex burns these into the video, so they can't be retimed. */
+  image?: boolean;
 };
+
+/** Plex's codec names for image-based subtitle formats. */
+const IMAGE_SUBTITLE_CODECS = new Set(["pgs", "vobsub", "dvd_subtitle", "dvb_subtitle", "hdmv_pgs_subtitle", "xsub"]);
 
 export type Tracks = { partId: number; audio: Track[]; subtitles: Track[] };
 
@@ -81,7 +86,7 @@ export async function getTracks(target: PmsTarget, ratingKey: string): Promise<T
     label: label(s),
     language: s.languageCode ?? s.language ?? null,
     selected: s.selected === true,
-    ...(sub ? { external: !!s.key } : {}),
+    ...(sub ? { external: !!s.key, image: IMAGE_SUBTITLE_CODECS.has((s.codec ?? "").toLowerCase()) } : {}),
   });
   return {
     partId: part.id,

@@ -24,6 +24,15 @@ import type { PmsTarget } from "./pms";
 const HLS_TARGET =
   "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts&videoCodec=h264&audioCodec=aac&replace=true)";
 
+/**
+ * Text subtitles as a WebVTT track inside the HLS stream (tested on PMS: the
+ * master playlist gains a SUBTITLES group), so the player draws them itself and
+ * each viewer can shift their timing. Image subtitles (PGS, VobSub) can't be
+ * converted to text, so with subtitles=auto Plex still burns those in.
+ */
+const SUBTITLE_TARGET =
+  "add-transcode-target(type=subtitleProfile&context=streaming&protocol=hls&container=webvtt&subtitleCodec=webvtt)";
+
 /** Audio codecs that could otherwise be copied through with their original (e.g. 5.1) channels. */
 const COPYABLE_AUDIO = ["aac", "ac3", "eac3"];
 
@@ -33,7 +42,7 @@ const COPYABLE_AUDIO = ["aac", "ac3", "eac3"];
  * add-limitation form, so Plex downmixes instead of passing 5.1 through.
  */
 export function profileExtra(opts: Pick<PlaybackOptions, "audio">): string {
-  const parts = [HLS_TARGET];
+  const parts = [HLS_TARGET, SUBTITLE_TARGET];
   if (opts.audio !== "surround") {
     for (const codec of COPYABLE_AUDIO) {
       parts.push(`add-limitation(scope=videoAudioCodec&scopeName=${codec}&type=upperBound&name=audio.channels&value=2)`);
@@ -153,8 +162,8 @@ export function transcodeParams(opts: PlaybackOptions, sessionId: string): Recor
     directPlay: "0",
     directStream: "1",
     directStreamAudio: "1",
-    // Burn in the profile's selected subtitle, if any; simplest cross-browser option for now.
-    subtitles: "burn",
+    // Text subtitles come as a WebVTT track (SUBTITLE_TARGET); Plex burns in only what it can't convert.
+    subtitles: "auto",
     location: opts.location,
     transcodeSessionId: sessionId,
     session: sessionId,

@@ -114,6 +114,7 @@ export function RoomView({ initial, isHost, inviteUrl }: { initial: PublicRoom; 
         <section className="panel">
           <RoomPlayer
             key={room.itemKey}
+            itemKey={room.itemKey}
             autoStart={room.autoStart}
             allLoaded={room.participants.filter((p) => p.connected).every((p) => p.playerReady)}
             next={room.next}

@@ -192,6 +192,13 @@ export function usePlexStream(apiBase: string, knownDurationMs: number | null) {
           },
         });
         hlsRef.current = hls;
+        // Subtitle cues are loaded into a hidden TextTrack; SubtitleOverlay draws
+        // them (with this viewer's delay) instead of the browser.
+        hls.subtitleDisplay = false;
+        // Plex sends only the subtitle picked in the track menu: always load it.
+        hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, (_e, data) => {
+          if (data.subtitleTracks.length > 0 && hls.subtitleTrack < 0) hls.subtitleTrack = 0;
+        });
         let detected = false;
         let networkFailures = 0;
         hls.on(Hls.Events.FRAG_LOADED, () => {

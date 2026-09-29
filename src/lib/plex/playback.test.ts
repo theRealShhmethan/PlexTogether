@@ -86,6 +86,15 @@ describe("transcodeParams", () => {
     expect(profileExtra({ audio: "surround" })).not.toContain("add-limitation");
   });
 
+  it("asks for text subtitles as a WebVTT track instead of burning them in", () => {
+    expect(transcodeParams({ ratingKey: "70", location: "lan" }, "s").subtitles).toBe("auto");
+    for (const audio of ["stereo", "surround"] as const) {
+      expect(profileExtra({ audio })).toContain(
+        "add-transcode-target(type=subtitleProfile&context=streaming&protocol=hls&container=webvtt&subtitleCodec=webvtt)",
+      );
+    }
+  });
+
   it("rejects non-numeric ids", () => {
     expect(() => transcodeParams({ ratingKey: "70/../../:/prefs", location: "lan" }, "s")).toThrow();
   });

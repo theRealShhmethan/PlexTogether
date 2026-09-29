@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { DecisionSummary } from "@/components/player/DecisionSummary";
 import { PlayerControls } from "@/components/player/PlayerControls";
+import { useSubtitleSettings } from "@/components/player/subtitles";
 import { TrackMenu } from "@/components/player/TrackMenu";
 import { usePlexStream } from "@/components/player/usePlexStream";
 import { useVideoClicks } from "@/components/player/useVideoClicks";
@@ -49,6 +50,8 @@ export const forgetAutoload = (roomId: string) => writeAutoload(roomId, false);
 
 type Props = {
   roomId: string;
+  /** The title playing (its Plex id), for this viewer's remembered subtitle timing. */
+  itemKey: string;
   me: string;
   isHost: boolean;
   permissions: Permissions;
@@ -88,6 +91,7 @@ export function RoomPlayer(props: Props) {
   const stream = usePlexStream(`/api/rooms/${roomId}/playback`, durationMs);
   const { videoRef, phase, setPhase, load, mediaTimeMs, videoEvents } = stream;
   const containerRef = useRef<HTMLDivElement>(null);
+  const subtitles = useSubtitleSettings(props.itemKey);
 
   const anchorRef = useRef(playback);
   const rttRef = useRef(rttMs);
@@ -466,6 +470,7 @@ export function RoomPlayer(props: Props) {
           onTogglePlay={canPlayPause ? togglePlay : null}
           onSeek={canSeek ? (ms) => void seek(ms) : null}
           busyLabel={busy}
+          subtitles={subtitles}
           extra={
             <TrackMenu
               apiBase={stream.apiBase}
@@ -475,6 +480,7 @@ export function RoomPlayer(props: Props) {
               onQuality={stream.setQuality}
               audioOutput={stream.audioOutput}
               onAudioOutput={stream.setAudioOutput}
+              subtitles={subtitles}
             />
           }
         />

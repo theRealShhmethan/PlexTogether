@@ -22,8 +22,8 @@ const metadata = {
                   { id: 1, streamType: 1, codec: "h264" },
                   { id: 2, streamType: 2, displayTitle: "English (AC3 5.1)", languageCode: "eng", selected: true },
                   { id: 3, streamType: 2, displayTitle: "Español (AAC Stereo)", languageCode: "spa" },
-                  { id: 4, streamType: 3, displayTitle: "English (SRT)", languageCode: "eng", key: "/library/streams/4" },
-                  { id: 5, streamType: 3, extendedDisplayTitle: "English (Forced PGS)", languageCode: "eng", selected: true },
+                  { id: 4, streamType: 3, codec: "srt", displayTitle: "English (SRT)", languageCode: "eng", key: "/library/streams/4" },
+                  { id: 5, streamType: 3, codec: "pgs", extendedDisplayTitle: "English (Forced PGS)", languageCode: "eng", selected: true },
                 ],
               },
             ],
@@ -45,9 +45,9 @@ describe("tracks", () => {
       [2, "English (AC3 5.1)", true],
       [3, "Español (AAC Stereo)", false],
     ]);
-    expect(t.subtitles.map((s) => [s.id, s.label, s.selected, s.external])).toEqual([
-      [4, "English (SRT)", false, true],
-      [5, "English (Forced PGS)", true, false],
+    expect(t.subtitles.map((s) => [s.id, s.label, s.selected, s.external, s.image])).toEqual([
+      [4, "English (SRT)", false, true, false],
+      [5, "English (Forced PGS)", true, false, true],
     ]);
   });
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { formatTime } from "@/lib/format/time";
+import { DELAY_STEP_MS, formatDelay, SubtitleOverlay, type SubtitleSettings } from "./subtitles";
 import { toggleFullscreen as toggleFs } from "./useVideoClicks";
 
 type Props = {
@@ -16,6 +17,8 @@ type Props = {
   busyLabel?: string | null;
   /** Extra controls (e.g. the audio/subtitle menu), placed before fullscreen. */
   extra?: ReactNode;
+  /** This viewer's subtitle settings: the subtitles are drawn here, and G/H change their delay. */
+  subtitles?: SubtitleSettings;
 };
 
 /** Hide the control bar (and cursor) after this long without mouse/keyboard activity. */
@@ -47,6 +50,7 @@ export function PlayerControls({
   onSeek,
   busyLabel,
   extra,
+  subtitles,
 }: Props) {
   const [now, setNow] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
@@ -64,10 +68,10 @@ export function PlayerControls({
   const flashSeq = useRef(0);
 
   // Latest props for the global key handler.
-  const live = useRef({ onTogglePlay, onSeek, mediaTimeMs, durationMs });
+  const live = useRef({ onTogglePlay, onSeek, mediaTimeMs, durationMs, subtitles });
   useEffect(() => {
-    live.current = { onTogglePlay, onSeek, mediaTimeMs, durationMs };
-  }, [onTogglePlay, onSeek, mediaTimeMs, durationMs]);
+    live.current = { onTogglePlay, onSeek, mediaTimeMs, durationMs, subtitles };
+  }, [onTogglePlay, onSeek, mediaTimeMs, durationMs, subtitles]);
 
   const showFlash = (text: string) => {
     const id = ++flashSeq.current;
@@ -116,13 +120,13 @@ export function PlayerControls({
   }, [hidden, containerRef]);
 
   // Keyboard shortcuts: Space/K play-pause, ←/→ (J/L) skip 10 s (Shift: 30 s),
-  // ↑/↓ volume, F fullscreen, M mute.
+  // ↑/↓ volume, F fullscreen, M mute, G/H subtitles earlier/later.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
       const v = videoRef.current;
       if (!v) return;
-      const { onTogglePlay: toggle, onSeek: seek, mediaTimeMs: nowMs, durationMs: totalMs } = live.current;
+      const { onTogglePlay: toggle, onSeek: seek, mediaTimeMs: nowMs, durationMs: totalMs, subtitles: subs } = live.current;
       const key = e.key;
       const skip = (delta: number) => {
         if (!seek) return;
@@ -164,6 +168,9 @@ export function PlayerControls({
       } else if (key === "m" || key === "M") {
         v.muted = !v.muted;
         showFlash(v.muted ? "🔇" : "🔊");
+      } else if (subs && (key === "g" || key === "G" || key === "h" || key === "H")) {
+        const delay = subs.nudge(key === "g" || key === "G" ? -DELAY_STEP_MS : DELAY_STEP_MS);
+        showFlash(`Subtitles ${formatDelay(delay)}`);
       } else if (key === "f" || key === "F") {
         if (document.fullscreenElement) void document.exitFullscreen();
         else void containerRef.current?.requestFullscreen();
@@ -210,6 +217,7 @@ export function PlayerControls({
   const shown = dragMs ?? now;
   return (
     <>
+      {subtitles && <SubtitleOverlay videoRef={videoRef} settings={subtitles} />}
       {flash && (
         <div key={flash.id} className="key-flash" aria-hidden="true">
           {flash.text}

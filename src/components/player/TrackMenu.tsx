@@ -5,6 +5,75 @@ import { getJson, postJson } from "@/lib/client/api";
 import type { AudioOutput, Quality } from "@/lib/plex/playback";
 import type { Track, Tracks } from "@/lib/plex/tracks";
 import { SubtitleSearch } from "./SubtitleSearch";
+import { formatDelay, SUBTITLE_SIZES, type SubtitleSettings, type SubtitleSize, type SubtitleStyle } from "./subtitles";
+
+const SIZE_LABELS: Record<SubtitleSize, string> = { small: "Small", medium: "Medium", large: "Large", huge: "Huge" };
+const STYLE_LABELS: Record<SubtitleStyle, string> = { outline: "Outlined text", box: "Dark box behind text" };
+
+/** Timing, size and style for the subtitles this viewer sees (this browser only). */
+function SubtitleTiming({ settings, image }: { settings: SubtitleSettings; image: boolean }) {
+  if (image) {
+    return (
+      <p className="muted small">
+        This subtitle is made of pictures, so Plex draws it into the video and its timing can&apos;t be adjusted. Pick a
+        text one (SRT) or find one online to adjust timing.
+      </p>
+    );
+  }
+  const { delayMs, setDelayMs, nudge } = settings;
+  return (
+    <div className="subtitle-settings">
+      <div className="track-field">
+        <span>Subtitle timing</span>
+        <div className="delay-row" role="group" aria-label="Subtitle timing">
+          <button className="button secondary small-button" onClick={() => nudge(-500)} title="Earlier by 0.5 s">
+            −0.5
+          </button>
+          <button className="button secondary small-button" onClick={() => nudge(-100)} title="Earlier by 0.1 s (G)">
+            −0.1
+          </button>
+          <output className="delay-value" aria-live="polite">
+            {formatDelay(delayMs)}
+          </output>
+          <button className="button secondary small-button" onClick={() => nudge(100)} title="Later by 0.1 s (H)">
+            +0.1
+          </button>
+          <button className="button secondary small-button" onClick={() => nudge(500)} title="Later by 0.5 s">
+            +0.5
+          </button>
+          <button className="link-button small" onClick={() => setDelayMs(0)} disabled={delayMs === 0}>
+            Reset
+          </button>
+        </div>
+      </div>
+      <p className="muted small">
+        Subtitles before the speech → press <b>+</b> (or H). After it → <b>−</b> (or G). Saved for this title.
+      </p>
+      <div className="row">
+        <label className="track-field">
+          <span>Size</span>
+          <select value={settings.size} onChange={(e) => settings.setSize(e.target.value as SubtitleSize)}>
+            {(Object.keys(SUBTITLE_SIZES) as SubtitleSize[]).map((s) => (
+              <option key={s} value={s}>
+                {SIZE_LABELS[s]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="track-field">
+          <span>Style</span>
+          <select value={settings.style} onChange={(e) => settings.setStyle(e.target.value as SubtitleStyle)}>
+            {(Object.keys(STYLE_LABELS) as SubtitleStyle[]).map((s) => (
+              <option key={s} value={s}>
+                {STYLE_LABELS[s]}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    </div>
+  );
+}
 
 const QUALITY_LABELS: Record<Quality, string> = {
   auto: "Auto (best for your connection)",
@@ -25,6 +94,7 @@ export function TrackMenu({
   onQuality,
   audioOutput,
   onAudioOutput,
+  subtitles,
 }: {
   apiBase: string;
   onChanged: () => Promise<void>;
@@ -32,6 +102,7 @@ export function TrackMenu({
   onQuality: (q: Quality) => Promise<void>;
   audioOutput: AudioOutput;
   onAudioOutput: (a: AudioOutput) => Promise<void>;
+  subtitles?: SubtitleSettings;
 }) {
   const [open, setOpen] = useState(false);
   const [tracks, setTracks] = useState<Tracks | null>(null);
@@ -135,6 +206,12 @@ export function TrackMenu({
                   ))}
                 </select>
               </label>
+              {subtitles && selectedId(tracks.subtitles) !== 0 && (
+                <SubtitleTiming
+                  settings={subtitles}
+                  image={!!tracks.subtitles.find((t) => t.selected)?.image}
+                />
+              )}
               <button className="link-button small" onClick={() => setFinding(true)} disabled={busy}>
                 {tracks.subtitles.length === 0 ? "No subtitles — find some online…" : "Find more subtitles online…"}
               </button>

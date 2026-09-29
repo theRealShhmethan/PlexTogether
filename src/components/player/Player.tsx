@@ -5,6 +5,7 @@ import { formatTime } from "@/lib/format/time";
 import type { LibraryItem } from "@/lib/plex/library";
 import { DecisionSummary } from "./DecisionSummary";
 import { PlayerControls } from "./PlayerControls";
+import { useSubtitleSettings } from "./subtitles";
 import { TrackMenu } from "./TrackMenu";
 import { usePlexStream } from "./usePlexStream";
 import { useVideoClicks } from "./useVideoClicks";
@@ -14,6 +15,7 @@ export function Player({ item }: { item: LibraryItem }) {
   const stream = usePlexStream("/api/plex/playback", item.durationMs);
   const { videoRef, phase, setPhase, load, videoEvents } = stream;
   const containerRef = useRef<HTMLDivElement>(null);
+  const subtitles = useSubtitleSettings(item.ratingKey);
   const [busy, setBusy] = useState<string | null>(null);
 
   async function start(fromMs: number) {
@@ -60,6 +62,7 @@ export function Player({ item }: { item: LibraryItem }) {
           onTogglePlay={togglePlay}
           onSeek={(ms) => void seek(ms)}
           busyLabel={busy}
+          subtitles={subtitles}
           extra={
             <TrackMenu
               apiBase={stream.apiBase}
@@ -68,6 +71,7 @@ export function Player({ item }: { item: LibraryItem }) {
               onQuality={stream.setQuality}
               audioOutput={stream.audioOutput}
               onAudioOutput={stream.setAudioOutput}
+              subtitles={subtitles}
             />
           }
         />

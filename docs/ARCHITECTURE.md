@@ -174,8 +174,11 @@ sync WebSocket. **As built:** the server calls `/video/:/transcode/universal/dec
 `start.m3u8` URL (no token in it) plus a transient token. The player (hls.js) adds that token only to
 requests for the Plex server's own origin (`withToken`). We always request HLS with direct
 stream allowed. Compatible video and audio are copied (remuxed), and anything else is transcoded to
-H.264/AAC (Generic profile plus an `add-transcode-target` augmentation). Subtitles are burned in for
-now. True direct play of the original file isn't used yet. The player's time equals media time
+H.264/AAC (Generic profile plus an `add-transcode-target` augmentation). Text subtitles come as a
+WebVTT track in the HLS stream (a subtitle `add-transcode-target` with `subtitles=auto`). The player draws
+them itself, so each viewer can shift the timing, size and style in their own browser. Image subtitles
+(PGS, VobSub) can't become text, so Plex still burns those in. (Plex's `GET /library/streams/{id}` only
+serves separate subtitle files; embedded ones return 501.) True direct play of the original file isn't used yet. The player's time equals media time
 (resume uses hls.js `startPosition`, not Plex's `offset`), which Phase 7 sync relies on. Progress
 goes to `/:/timeline` via our server every 10 s and on every state change, which updates Plex's
 resume point and watched status. Only the watch-party pick can be started, and only the current
