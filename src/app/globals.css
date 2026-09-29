@@ -1244,9 +1244,9 @@ details.stream-info[open] summary {
   cursor: none;
 }
 
+/* Invisible but still hoverable: moving onto the bar's area brings it back. */
 .video-box.idle .controls {
   opacity: 0;
-  pointer-events: none;
 }
 
 .video-box.idle:has(.track-popover) {
@@ -1255,7 +1255,6 @@ details.stream-info[open] summary {
 
 .video-box.idle:has(.track-popover) .controls {
   opacity: 1;
-  pointer-events: auto;
 }
 
 /* Brief centre indicator for keyboard actions (play/pause, skip target, volume). */

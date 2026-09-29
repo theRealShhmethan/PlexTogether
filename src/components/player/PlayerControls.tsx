@@ -58,6 +58,8 @@ export function PlayerControls({
   const pendingSkip = useRef<number | null>(null);
   const skipTimer = useRef<number | undefined>(undefined);
   const idleTimer = useRef<number | undefined>(undefined);
+  /** The pointer is over the bar: never hide it then. */
+  const hoverRef = useRef(false);
   const flashSeq = useRef(0);
 
   // Latest props for the global key handler.
@@ -73,29 +75,38 @@ export function PlayerControls({
   };
 
   /** Any activity shows the controls and restarts the 10 s hide timer. */
+  /** (Re)starts the hide timer. */
+  const startHideTimer = () => {
+    window.clearTimeout(idleTimer.current);
+    idleTimer.current = window.setTimeout(() => {
+      // Still hovering the bar: keep it and check again later.
+      if (hoverRef.current) startHideTimer();
+      else setVisible(false);
+    }, IDLE_HIDE_MS);
+  };
   const poke = () => {
     setVisible(true);
-    window.clearTimeout(idleTimer.current);
-    idleTimer.current = window.setTimeout(() => setVisible(false), IDLE_HIDE_MS);
+    startHideTimer();
   };
 
-  // Mouse/touch activity over the player.
+  // Any mouse/touch activity on the page shows the bar. Listening on the
+  // document (not just the player box) also covers fullscreen and overlays.
   useEffect(() => {
-    const box = containerRef.current;
-    if (!box) return;
     const onActivity = () => poke();
-    box.addEventListener("mousemove", onActivity);
-    box.addEventListener("pointerdown", onActivity);
-    box.addEventListener("touchstart", onActivity, { passive: true });
-    poke();
+    document.addEventListener("mousemove", onActivity);
+    document.addEventListener("pointermove", onActivity);
+    document.addEventListener("pointerdown", onActivity);
+    document.addEventListener("touchstart", onActivity, { passive: true });
+    startHideTimer(); // visible to begin with
     return () => {
-      box.removeEventListener("mousemove", onActivity);
-      box.removeEventListener("pointerdown", onActivity);
-      box.removeEventListener("touchstart", onActivity);
+      document.removeEventListener("mousemove", onActivity);
+      document.removeEventListener("pointermove", onActivity);
+      document.removeEventListener("pointerdown", onActivity);
+      document.removeEventListener("touchstart", onActivity);
       window.clearTimeout(idleTimer.current);
     };
-     
-  }, [containerRef]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- poke only uses refs and setters
+  }, []);
 
   // Hidden only while playing (never while paused), via a class on the player box.
   const hidden = !visible && !paused && dragMs === null;
@@ -165,7 +176,7 @@ export function PlayerControls({
       window.removeEventListener("keydown", onKey);
       window.clearTimeout(skipTimer.current);
     };
-     
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- poke/props are read through refs and stable setters
   }, [videoRef, containerRef]);
 
   useEffect(() => {
@@ -200,7 +211,17 @@ export function PlayerControls({
           {flash.text}
         </div>
       )}
-      <div className="controls">
+      <div
+      className="controls"
+      onPointerEnter={() => {
+        hoverRef.current = true;
+        poke();
+      }}
+      onPointerLeave={() => {
+        hoverRef.current = false;
+        poke();
+      }}
+    >
         <button
           className="ctl"
           onClick={() => onTogglePlay?.()}
