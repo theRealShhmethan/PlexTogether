@@ -1244,9 +1244,12 @@ details.stream-info[open] summary {
   cursor: none;
 }
 
-/* Invisible but still hoverable: moving onto the bar's area brings it back. */
+/* Invisible but still hoverable: moving onto the bar's area brings it back.
+   Not quite 0: with nothing drawn over it, Chrome hands a fullscreen video to a
+   hardware overlay, which (on some GPUs) misplaces the picture and keeps the
+   bar from ever being drawn again. 1% is invisible but keeps it composited. */
 .video-box.idle .controls {
-  opacity: 0;
+  opacity: 0.01;
 }
 
 .video-box.idle:has(.track-popover) {
