@@ -27,8 +27,9 @@ remote guest (Lexi), each on their own network, watched together in sync through
 | Subtitles/audio (English chosen automatically), quality picker, change title, next episode, chat and reactions | ✅ built; mostly verified |
 | Docker on the Synology NAS, HTTPS through Caddy, Let's Encrypt | ✅ live |
 | Find/download subtitles online through Plex, keyboard shortcuts (Space, ←/→, ↑/↓, F, M), auto-hiding control bar, double-click fullscreen, audio output (stereo downmix by default / surround) | ✅ built and tested locally (incl. fullscreen); subtitle download permission and stereo downmix not yet checked on the NAS |
+| Subtitle settings: per-viewer timing (G/H, saved per title), size, style. Text subtitles arrive as a WebVTT track and the player draws them; image subtitles (PGS) are still burned in | ✅ built and unit-tested; **not yet watched on the real server** |
 
-Tests: `npm run check` runs typecheck, lint and 121 Vitest tests (the player-controls tests run in jsdom). All pass.
+Tests: `npm run check` runs typecheck, lint and 131 Vitest tests (the player-controls tests run in jsdom). All pass.
 
 ## Where it runs
 
